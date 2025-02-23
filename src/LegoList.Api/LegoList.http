@@ -1,0 +1,6 @@
+@LegoList_HostAddress = http://localhost:5003
+
+GET {{LegoList_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
