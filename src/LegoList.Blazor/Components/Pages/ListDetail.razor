@@ -1,0 +1,236 @@
+@page "/lists/{Id:int}"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using LegoList.Blazor.Models
+
+<PageTitle>@(list?.Name ?? "List")</PageTitle>
+
+@if (list is null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/">Lists</a></li>
+            <li class="breadcrumb-item active">@list.Name</li>
+        </ol>
+    </nav>
+
+    <h1>@list.Name</h1>
+
+    @if (list.Sets.Count == 0)
+    {
+        <p class="text-muted">No sets yet. Add one below.</p>
+    }
+    else
+    {
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>Set #</th>
+                    <th>Theme</th>
+                    <th>Name</th>
+                    <th>Pieces</th>
+                    <th>Qty</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var set in list.Sets)
+                {
+                    @if (editingSetId == set.Id)
+                    {
+                        <tr>
+                            <td></td>
+                            <td><input class="form-control form-control-sm" @bind="editSetNumber" /></td>
+                            <td><input class="form-control form-control-sm" @bind="editTheme" /></td>
+                            <td><input class="form-control form-control-sm" @bind="editName" /></td>
+                            <td class="text-muted">@(set.PieceCount?.ToString() ?? "—")</td>
+                            <td><input class="form-control form-control-sm" type="number" @bind="editQuantity" style="width:70px" /></td>
+                            <td>
+                                <button class="btn btn-sm btn-success me-1" @onclick="SaveEdit">Save</button>
+                                <button class="btn btn-sm btn-secondary" @onclick="CancelEdit">Cancel</button>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        <tr>
+                            <td style="width:70px">
+                                @if (set.ImageUrl is not null)
+                                {
+                                    <img src="@set.ImageUrl" alt="@set.Name" style="height:60px;object-fit:contain" />
+                                }
+                            </td>
+                            <td>@set.SetNumber</td>
+                            <td>@set.Theme</td>
+                            <td>@set.Name</td>
+                            <td>@(set.PieceCount?.ToString() ?? "—")</td>
+                            <td>@set.Quantity</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => StartEdit(set)">Edit</button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => DeleteSet(set.Id)">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    }
+
+    <h3>Add Set</h3>
+    <div class="row g-2 mb-3 align-items-end">
+        <div class="col-auto">
+            <label class="form-label">Set #</label>
+            <input class="form-control" @bind="newSetNumber" placeholder="e.g. 75192" />
+        </div>
+        <div class="col-auto">
+            <label class="form-label">Theme</label>
+            <input class="form-control" @bind="newTheme" placeholder="e.g. Star Wars" />
+        </div>
+        <div class="col-auto">
+            <label class="form-label">Name</label>
+            <input class="form-control" @bind="newName" placeholder="e.g. Millennium Falcon" />
+        </div>
+        <div class="col-auto">
+            <label class="form-label">Qty</label>
+            <input class="form-control" type="number" @bind="newQuantity" style="width:80px" />
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-primary" @onclick="AddSet">Add</button>
+        </div>
+    </div>
+
+    @if (errorMessage is not null)
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private SetListDto? list;
+    private string? errorMessage;
+
+    // Add form
+    private string newSetNumber = string.Empty;
+    private string newTheme = string.Empty;
+    private string newName = string.Empty;
+    private int newQuantity = 1;
+
+    // Edit state
+    private int? editingSetId;
+    private string editSetNumber = string.Empty;
+    private string editTheme = string.Empty;
+    private string editName = string.Empty;
+    private int editQuantity = 1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadList();
+    }
+
+    private async Task LoadList()
+    {
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            list = await http.GetFromJsonAsync<SetListDto>($"api/lists/{Id}");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to load list: {ex.Message}";
+        }
+    }
+
+    private async Task AddSet()
+    {
+        if (string.IsNullOrWhiteSpace(newSetNumber)) return;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            var response = await http.PostAsJsonAsync($"api/lists/{Id}/sets", new
+            {
+                SetNumber = newSetNumber,
+                Theme = newTheme,
+                Name = newName,
+                Quantity = newQuantity
+            });
+            if (response.IsSuccessStatusCode)
+            {
+                newSetNumber = newTheme = newName = string.Empty;
+                newQuantity = 1;
+                errorMessage = null;
+                await LoadList();
+            }
+            else
+            {
+                errorMessage = $"Failed to add set: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+    }
+
+    private void StartEdit(LegoSetDto set)
+    {
+        editingSetId = set.Id;
+        editSetNumber = set.SetNumber;
+        editTheme = set.Theme;
+        editName = set.Name;
+        editQuantity = set.Quantity;
+    }
+
+    private void CancelEdit() => editingSetId = null;
+
+    private async Task SaveEdit()
+    {
+        if (editingSetId is null) return;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            var response = await http.PutAsJsonAsync($"api/lists/{Id}/sets/{editingSetId}", new
+            {
+                SetNumber = editSetNumber,
+                Theme = editTheme,
+                Name = editName,
+                Quantity = editQuantity
+            });
+            if (response.IsSuccessStatusCode)
+            {
+                editingSetId = null;
+                errorMessage = null;
+                await LoadList();
+            }
+            else
+            {
+                errorMessage = $"Failed to update set: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+    }
+
+    private async Task DeleteSet(int setId)
+    {
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            await http.DeleteAsync($"api/lists/{Id}/sets/{setId}");
+            await LoadList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+    }
+}
