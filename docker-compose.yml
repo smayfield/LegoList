@@ -16,7 +16,7 @@ services:
       retries: 10
 
   liquibase:
-    image: liquibase/liquibase:latest
+    image: liquibase/liquibase:4.29.2
     depends_on:
       postgres:
         condition: service_healthy

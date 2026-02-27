@@ -41,6 +41,8 @@ public class LegoListDbContext(DbContextOptions<LegoListDbContext> options) : Db
             e.ToTable("set_metadata");
             e.HasKey(x => x.SetNumber);
             e.Property(x => x.SetNumber).HasColumnName("set_number");
+            e.Property(x => x.Name).HasColumnName("name");
+            e.Property(x => x.Theme).HasColumnName("theme");
             e.Property(x => x.ImageUrl).HasColumnName("image_url");
             e.Property(x => x.PieceCount).HasColumnName("piece_count");
             e.Property(x => x.FetchedAt).HasColumnName("fetched_at");

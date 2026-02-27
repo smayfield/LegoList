@@ -86,24 +86,20 @@ else
     <div class="row g-2 mb-3 align-items-end">
         <div class="col-auto">
             <label class="form-label">Set #</label>
-            <input class="form-control" @bind="newSetNumber" placeholder="e.g. 75192" />
-        </div>
-        <div class="col-auto">
-            <label class="form-label">Theme</label>
-            <input class="form-control" @bind="newTheme" placeholder="e.g. Star Wars" />
-        </div>
-        <div class="col-auto">
-            <label class="form-label">Name</label>
-            <input class="form-control" @bind="newName" placeholder="e.g. Millennium Falcon" />
+            <input class="form-control" @bind="newSetNumber" placeholder="e.g. 75192" disabled="@isAdding" />
         </div>
         <div class="col-auto">
             <label class="form-label">Qty</label>
-            <input class="form-control" type="number" @bind="newQuantity" style="width:80px" />
+            <input class="form-control" type="number" @bind="newQuantity" style="width:80px" disabled="@isAdding" />
         </div>
         <div class="col-auto">
-            <button class="btn btn-primary" @onclick="AddSet">Add</button>
+            <button class="btn btn-primary" @onclick="AddSet" disabled="@isAdding">
+                @if (isAdding) { <span class="spinner-border spinner-border-sm me-1" role="status"></span> <span>Fetching...</span> }
+                else { <span>Add</span> }
+            </button>
         </div>
     </div>
+    <p class="text-muted small">Name, theme, image, and piece count are retrieved automatically from Rebrickable.</p>
 
     @if (errorMessage is not null)
     {
@@ -119,9 +115,8 @@ else
 
     // Add form
     private string newSetNumber = string.Empty;
-    private string newTheme = string.Empty;
-    private string newName = string.Empty;
     private int newQuantity = 1;
+    private bool isAdding = false;
 
     // Edit state
     private int? editingSetId;
@@ -151,19 +146,18 @@ else
     private async Task AddSet()
     {
         if (string.IsNullOrWhiteSpace(newSetNumber)) return;
+        isAdding = true;
         try
         {
             var http = HttpClientFactory.CreateClient("LegoListApi");
             var response = await http.PostAsJsonAsync($"api/lists/{Id}/sets", new
             {
                 SetNumber = newSetNumber,
-                Theme = newTheme,
-                Name = newName,
                 Quantity = newQuantity
             });
             if (response.IsSuccessStatusCode)
             {
-                newSetNumber = newTheme = newName = string.Empty;
+                newSetNumber = string.Empty;
                 newQuantity = 1;
                 errorMessage = null;
                 await LoadList();
@@ -176,6 +170,10 @@ else
         catch (Exception ex)
         {
             errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isAdding = false;
         }
     }
 

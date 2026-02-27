@@ -47,39 +47,49 @@ public class SetsController(
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create(int listId, [FromBody] SetRequest request)
+    public async Task<IActionResult> Create(int listId, [FromBody] CreateSetRequest request)
     {
         var list = await GetOwnedListAsync(listId);
         if (list is null) return NotFound();
+
+        // Use cached metadata if available, otherwise fetch from Rebrickable
+        var metadata = await db.SetMetadatas.FindAsync(request.SetNumber);
+        if (metadata is null)
+        {
+            var fetched = await rebrickableService.FetchAsync(request.SetNumber);
+            try
+            {
+                metadata = new SetMetadata
+                {
+                    SetNumber = request.SetNumber,
+                    Name = fetched.Name,
+                    Theme = fetched.Theme,
+                    ImageUrl = fetched.ImageUrl,
+                    PieceCount = fetched.PieceCount,
+                    FetchedAt = DateTime.UtcNow
+                };
+                db.SetMetadatas.Add(metadata);
+                await db.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                // Another concurrent request cached it first; reload
+                db.ChangeTracker.Clear();
+                metadata = await db.SetMetadatas.FindAsync(request.SetNumber);
+            }
+        }
 
         var set = new LegoSet
         {
             SetListId = listId,
             SetNumber = request.SetNumber,
-            Theme = request.Theme,
-            Name = request.Name,
+            Name = metadata?.Name ?? string.Empty,
+            Theme = metadata?.Theme ?? string.Empty,
             Quantity = request.Quantity
         };
         db.LegoSets.Add(set);
         await db.SaveChangesAsync();
-        logger.LogInformation("Added set {SetId} to list {ListId}", set.Id, listId);
-
-        // Fetch and cache Rebrickable metadata the first time this set number is added
-        if (!await db.SetMetadatas.AnyAsync(m => m.SetNumber == request.SetNumber))
-        {
-            var (imageUrl, pieceCount) = await rebrickableService.FetchAsync(request.SetNumber);
-            if (imageUrl is not null || pieceCount is not null)
-            {
-                db.SetMetadatas.Add(new SetMetadata
-                {
-                    SetNumber = request.SetNumber,
-                    ImageUrl = imageUrl,
-                    PieceCount = pieceCount,
-                    FetchedAt = DateTime.UtcNow
-                });
-                await db.SaveChangesAsync();
-            }
-        }
+        logger.LogInformation("Added set {SetId} ({SetNumber}) to list {ListId}", set.Id, set.SetNumber, listId);
 
         return CreatedAtAction(nameof(GetAll), new { listId }, set);
     }
@@ -117,4 +127,5 @@ public class SetsController(
     }
 }
 
+public record CreateSetRequest(string SetNumber, int Quantity);
 public record SetRequest(string SetNumber, string Theme, string Name, int Quantity);
