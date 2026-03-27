@@ -10,6 +10,9 @@ All commands should be run from the repo root unless otherwise noted.
 # Build everything
 dotnet build src/LegoList.sln
 
+# Run all tests
+dotnet test src/LegoList.sln
+
 # Run API (HTTP on port 5003)
 dotnet run --project src/LegoList.Api/LegoList.Api.csproj
 
@@ -26,7 +29,19 @@ docker-compose up
 docker-compose up -d postgres liquibase
 ```
 
-No test project exists yet. The `.http` file at `src/LegoList.Api/LegoList.http` can be used for manual endpoint testing with the VSCode REST Client or Visual Studio.
+## PowerShell Scripts
+
+Two convenience scripts live at the repo root:
+
+```powershell
+# Initialize the database (run once, or after schema changes)
+.\setup.ps1
+
+# Build, test, then launch the Blazor UI in a browser
+.\start.ps1
+```
+
+The `.http` file at `src/LegoList.Api/LegoList.http` can be used for manual endpoint testing with the VSCode REST Client or Visual Studio.
 
 ## Architecture
 

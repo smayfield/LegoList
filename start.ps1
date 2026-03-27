@@ -7,7 +7,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$repoRoot  = Split-Path -Parent $PSScriptRoot
+$repoRoot  = $PSScriptRoot
 $solution  = Join-Path $repoRoot 'src\LegoList.sln'
 $blazorUrl = 'http://localhost:5164'
 

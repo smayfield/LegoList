@@ -7,7 +7,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = Split-Path -Parent $PSScriptRoot
+$repoRoot = $PSScriptRoot
 
 Write-Host "==> Starting PostgreSQL and applying Liquibase migrations..." -ForegroundColor Cyan
 
