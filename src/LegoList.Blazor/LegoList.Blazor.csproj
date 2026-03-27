@@ -9,6 +9,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <UserSecretsId>legolist-blazor</UserSecretsId>
   </PropertyGroup>
 
 </Project>
