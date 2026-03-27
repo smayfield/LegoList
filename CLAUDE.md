@@ -4,28 +4,55 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-All commands should be run from `src/LegoList.Api/` unless otherwise noted.
+All commands should be run from the repo root unless otherwise noted.
 
 ```bash
-# Build
+# Build everything
 dotnet build src/LegoList.sln
 
-# Run (HTTP on port 5003)
+# Run API (HTTP on port 5003)
 dotnet run --project src/LegoList.Api/LegoList.Api.csproj
+
+# Run Blazor UI (default port 5258 / 7258 HTTPS)
+dotnet run --project src/LegoList.Blazor/LegoList.Blazor.csproj
 
 # Restore dependencies
 dotnet restore src/LegoList.sln
+
+# Start PostgreSQL and apply schema via Liquibase
+docker-compose up
+
+# Start only the database (detached)
+docker-compose up -d postgres liquibase
 ```
 
 No test project exists yet. The `.http` file at `src/LegoList.Api/LegoList.http` can be used for manual endpoint testing with the VSCode REST Client or Visual Studio.
 
 ## Architecture
 
-This is an ASP.NET Core 9.0 Web API project (`net9.0`) with nullable reference types and implicit usings enabled.
+Two projects in one solution:
 
-- **Entry point**: `src/LegoList.Api/Program.cs` — registers services, configures middleware (HTTPS redirect, authorization, controllers), and maps OpenAPI in Development only.
-- **Controllers**: `src/LegoList.Api/Controllers/` — standard attribute-routed MVC controllers injecting `ILogger<T>`.
-- **Models**: defined alongside controllers or in dedicated files at the project root (e.g., `WeatherForecast.cs`).
-- **Configuration**: `appsettings.json` / `appsettings.Development.json` for environment-specific settings.
+### LegoList.Api — ASP.NET Core 10.0 Web API (`net10.0`)
+- **Entry point**: `src/LegoList.Api/Program.cs` — registers EF Core (PostgreSQL), CORS, controllers, OpenAPI.
+- **Models**: `src/LegoList.Api/Models/` — `SetList`, `LegoSet`
+- **Data**: `src/LegoList.Api/Data/LegoListDbContext.cs` — EF Core context
+- **Controllers**: `src/LegoList.Api/Controllers/` — `ListsController` (`api/lists`), `SetsController` (`api/lists/{listId}/sets`)
+- **Configuration**: connection string in `appsettings.json` (`DefaultConnection`)
+- **Packages**: `Npgsql.EntityFrameworkCore.PostgreSQL` 10.0, `Microsoft.EntityFrameworkCore.Design` 10.0
 
-The project currently contains only the default scaffold (WeatherForecast endpoint). Real Lego list domain logic has not been added yet.
+### LegoList.Blazor — Blazor Web App (`net10.0`, Server interactivity)
+- **Entry point**: `src/LegoList.Blazor/Program.cs` — registers `IHttpClientFactory` pointed at the API
+- **Pages**: `src/LegoList.Blazor/Components/Pages/` — `Lists.razor` (`/`), `ListDetail.razor` (`/lists/{id}`)
+- **Models**: `src/LegoList.Blazor/Models/` — `SetListDto`, `LegoSetDto`
+- **Configuration**: `ApiBaseUrl` in `appsettings.json` (defaults to `http://localhost:5003/`)
+
+## Database
+
+PostgreSQL runs in Docker. Connection string: `Host=localhost;Database=legolist;Username=legolist;Password=legolist`
+
+Schema is managed by **Liquibase** (not EF Core migrations). EF Core is used only for querying.
+
+To add a migration:
+1. Create a new SQL file in `liquibase/changelog/changes/` (e.g., `002-add-column.sql`)
+2. Add an `<include>` entry for it in `liquibase/changelog/db.changelog-root.xml`
+3. Run `docker-compose up liquibase` to apply

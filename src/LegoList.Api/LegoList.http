@@ -1,6 +1,75 @@
 @LegoList_HostAddress = http://localhost:5003
 
-GET {{LegoList_HostAddress}}/weatherforecast/
+### Get all lists
+GET {{LegoList_HostAddress}}/api/lists
 Accept: application/json
+
+###
+
+### Get a single list with its sets
+GET {{LegoList_HostAddress}}/api/lists/1
+Accept: application/json
+
+###
+
+### Create a list
+POST {{LegoList_HostAddress}}/api/lists
+Content-Type: application/json
+
+{
+  "name": "Wishlist"
+}
+
+###
+
+### Rename a list
+PUT {{LegoList_HostAddress}}/api/lists/1
+Content-Type: application/json
+
+{
+  "name": "My Wishlist"
+}
+
+###
+
+### Delete a list
+DELETE {{LegoList_HostAddress}}/api/lists/1
+
+###
+
+### Get all sets in a list
+GET {{LegoList_HostAddress}}/api/lists/1/sets
+Accept: application/json
+
+###
+
+### Add a set to a list
+POST {{LegoList_HostAddress}}/api/lists/1/sets
+Content-Type: application/json
+
+{
+  "setNumber": "75192",
+  "theme": "Star Wars",
+  "name": "Millennium Falcon",
+  "quantity": 1
+}
+
+###
+
+### Update a set
+PUT {{LegoList_HostAddress}}/api/lists/1/sets/1
+Content-Type: application/json
+
+{
+  "setNumber": "75192",
+  "theme": "Star Wars",
+  "name": "Millennium Falcon UCS",
+  "quantity": 2
+}
+
+###
+
+### Delete a set
+DELETE {{LegoList_HostAddress}}/api/lists/1/sets/1
 
 ###

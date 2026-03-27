@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: legolist
+      POSTGRES_USER: legolist
+      POSTGRES_PASSWORD: legolist
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U legolist -d legolist"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  liquibase:
+    image: liquibase/liquibase:4.29.2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./liquibase/changelog:/liquibase/changelog
+    command: >
+      --url=jdbc:postgresql://postgres:5432/legolist
+      --username=legolist
+      --password=legolist
+      --changeLogFile=changelog/db.changelog-root.xml
+      update
+
+volumes:
+  pgdata:

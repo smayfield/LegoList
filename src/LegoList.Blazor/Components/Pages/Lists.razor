@@ -1,0 +1,110 @@
+@page "/"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpClientFactory
+@using LegoList.Blazor.Models
+
+<PageTitle>My Lego Lists</PageTitle>
+
+<h1>My Lego Lists</h1>
+
+@if (lists is null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Sets</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var list in lists)
+            {
+                <tr>
+                    <td><a href="/lists/@list.Id">@list.Name</a></td>
+                    <td>@list.SetCount</td>
+                    <td>
+                        <button class="btn btn-sm btn-danger" @onclick="() => DeleteList(list.Id)">Delete</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <h3>Create New List</h3>
+    <div class="d-flex gap-2 mb-3">
+        <input class="form-control w-auto" placeholder="List name" @bind="newListName" />
+        <button class="btn btn-primary" @onclick="CreateList">Create</button>
+    </div>
+
+    @if (errorMessage is not null)
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
+}
+
+@code {
+    private List<SetListDto>? lists;
+    private string newListName = string.Empty;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLists();
+    }
+
+    private async Task LoadLists()
+    {
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            lists = await http.GetFromJsonAsync<List<SetListDto>>("api/lists");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to load lists: {ex.Message}";
+        }
+    }
+
+    private async Task CreateList()
+    {
+        if (string.IsNullOrWhiteSpace(newListName)) return;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            var response = await http.PostAsJsonAsync("api/lists", new { Name = newListName });
+            if (response.IsSuccessStatusCode)
+            {
+                newListName = string.Empty;
+                errorMessage = null;
+                await LoadLists();
+            }
+            else
+            {
+                errorMessage = $"Failed to create list: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+    }
+
+    private async Task DeleteList(int id)
+    {
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            await http.DeleteAsync($"api/lists/{id}");
+            await LoadLists();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+    }
+}

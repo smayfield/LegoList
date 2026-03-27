@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",
+      "Bash(gh pr:*)",
+      "Bash(winget install:*)",
+      "Bash(gh api:*)",
+      "Bash(cd:*)",
+      "Bash(tail:*)",
+      "Bash(cd /c/src/LegoList && dotnet ef migrations add InitialCreate --project src/LegoList.Api/LegoList.Api.csproj 2>&1)",
+      "Bash(dotnet tool:*)",
+      "Bash(grep NETCore:*)",
+      "Bash(cd /c/src/LegoList && dotnet new blazor -n LegoList.Blazor -o src/LegoList.Blazor --interactivity Server 2>&1)",
+      "Bash(cd /c/src/LegoList && dotnet sln src/LegoList.sln add src/LegoList.Blazor/LegoList.Blazor.csproj 2>&1)",
+      "Bash(dotnet build:*)",
+      "Bash(cd /c/src/LegoList && docker-compose up -d postgres liquibase 2>&1)"
+    ]
+  }
+}
