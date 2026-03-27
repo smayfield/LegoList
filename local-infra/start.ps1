@@ -32,8 +32,8 @@ Write-Host ""
 Write-Host "==> Running tests..." -ForegroundColor Cyan
 
 # Discover test projects — any *Tests* or *Test* csproj under src/
-$testProjects = Get-ChildItem -Path (Join-Path $repoRoot 'src') -Recurse -Filter '*.csproj' |
-    Where-Object { $_.BaseName -match 'Tests?' }
+$testProjects = @(Get-ChildItem -Path (Join-Path $repoRoot 'src') -Recurse -Filter '*.csproj' |
+    Where-Object { $_.BaseName -match 'Tests?' })
 
 if ($testProjects.Count -eq 0) {
     Write-Host "    No test projects found — skipping." -ForegroundColor Yellow

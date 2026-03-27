@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet:*)",
+      "Bash(docker-compose:*)",
+      "Bash(docker:*)",
+      "Bash(git:*)",
+      "Bash(pwsh:*)",
+      "Bash(powershell:*)",
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep"
+    ]
+  }
+}
