@@ -1,5 +1,6 @@
 @page "/lists/{Id:int}"
 @rendermode InteractiveServer
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using LegoList.Blazor.Models

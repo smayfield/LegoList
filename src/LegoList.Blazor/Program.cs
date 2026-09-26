@@ -104,7 +104,7 @@ app.MapGet("/auth/login", async (HttpContext ctx, string? returnUrl) =>
 app.MapGet("/auth/logout", async (HttpContext ctx) =>
 {
     await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    return Results.Redirect("/auth/login");
+    return Results.Redirect("/");
 }).RequireAuthorization();
 
 app.UseAntiforgery();

@@ -4,10 +4,15 @@
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG TARGETARCH
 WORKDIR /src
-COPY src/LegoList.Blazor/LegoList.Blazor.csproj LegoList.Blazor/
-RUN dotnet restore LegoList.Blazor/LegoList.Blazor.csproj -a $TARGETARCH
+# Copy the full source BEFORE restoring: the SDK only adds the package that ships
+# _framework/blazor.web.js (Microsoft.AspNetCore.App.Internal.Assets) when it can see
+# Razor components at restore time. Restoring from the .csproj alone silently drops
+# it, leaving the app with no interactivity (buttons do nothing).
 COPY src/LegoList.Blazor/ LegoList.Blazor/
+RUN dotnet restore LegoList.Blazor/LegoList.Blazor.csproj -a $TARGETARCH
 RUN dotnet publish LegoList.Blazor/LegoList.Blazor.csproj -c Release -a $TARGETARCH --no-restore -o /app
+# Fail the image build if the Blazor script is ever missing again.
+RUN test -f /app/wwwroot/_framework/blazor.web.js
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app

@@ -1,13 +1,26 @@
 @page "/"
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
+@inject AuthenticationStateProvider AuthStateProvider
 @using LegoList.Blazor.Models
 
 <PageTitle>My Lego Lists</PageTitle>
 
 <h1>My Lego Lists</h1>
 
-@if (lists is null && errorMessage is not null)
+@if (signedIn == false)
+{
+    <div class="card shadow-sm" style="max-width: 32rem;">
+        <div class="card-body">
+            <h2 class="h4 card-title">Welcome to LegoList</h2>
+            <p class="card-text">Keep track of your LEGO sets in lists. Names, themes, pictures, and piece
+                counts are filled in automatically from Rebrickable.</p>
+            <p class="card-text">Sign in to see and manage your lists.</p>
+            <a class="btn btn-primary" href="/auth/login">Sign in with Google</a>
+        </div>
+    </div>
+}
+else if (lists is null && errorMessage is not null)
 {
     <div class="alert alert-danger">@errorMessage</div>
 }
@@ -55,10 +68,14 @@ else
     private List<SetListDto>? lists;
     private string newListName = string.Empty;
     private string? errorMessage;
+    private bool? signedIn;
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadLists();
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        signedIn = state.User.Identity?.IsAuthenticated == true;
+        if (signedIn == true)
+            await LoadLists();
     }
 
     private async Task LoadLists()
