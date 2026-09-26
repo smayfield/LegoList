@@ -6,19 +6,24 @@
 
 <PageTitle>My Lego Lists</PageTitle>
 
-<h1>My Lego Lists</h1>
+<div class="page-head">
+    <Brick Color="var(--brick-red)" Studs="3" Width="54" />
+    <h1>My Lego Lists</h1>
+</div>
 
 @if (signedIn == false)
 {
-    <div class="card shadow-sm" style="max-width: 32rem;">
-        <div class="card-body">
-            <h2 class="h4 card-title">Welcome to LegoList</h2>
-            <p class="card-text">Keep track of your LEGO sets in lists. Names, themes, pictures, and piece
-                counts are filled in automatically from Rebrickable.</p>
-            <p class="card-text">Sign in to see and manage your lists.</p>
-            <a class="btn btn-primary" href="/auth/login" data-enhance-nav="false">Sign in with Google</a>
+    <section class="welcome">
+        <h2>Welcome to LegoList!</h2>
+        <p>Keep track of your LEGO sets in lists. Names, themes, pictures, and piece counts fill in
+            automatically from Rebrickable.</p>
+        <a class="btn btn-light" href="/auth/login" data-enhance-nav="false">Sign in with Google</a>
+        <div class="stack" aria-hidden="true">
+            <Brick Color="var(--brick-yellow)" Studs="2" Width="70" />
+            <Brick Color="var(--brick-blue)" Studs="3" Width="104" />
+            <Brick Color="var(--brick-green)" Studs="4" Width="138" />
         </div>
-    </div>
+    </section>
 }
 else if (lists is null && errorMessage is not null)
 {
@@ -30,37 +35,45 @@ else if (lists is null)
 }
 else
 {
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Name</th>
-                <th>Sets</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var list in lists)
+    @if (lists.Count == 0)
+    {
+        <div class="empty">
+            <Brick Color="var(--brick-blue)" Studs="2" Width="48" />
+            <span>No lists yet. Start one below, like "Collection", "Wishlist", or "Built".</span>
+        </div>
+    }
+    else
+    {
+        <div class="card-grid">
+            @for (var i = 0; i < lists.Count; i++)
             {
-                <tr>
-                    <td><a href="/lists/@list.Id">@list.Name</a></td>
-                    <td>@list.SetCount</td>
-                    <td>
+                var list = lists[i];
+                var color = Brick.Palette[i % Brick.Palette.Length];
+                <article class="list-card" style="--c: @color">
+                    <a class="stretched" href="/lists/@list.Id" aria-label="Open @list.Name"></a>
+                    <Brick Color="@color" Studs="2" Width="40" />
+                    <h3>@list.Name</h3>
+                    <span class="count">@list.SetCount @(list.SetCount == 1 ? "set" : "sets")</span>
+                    <div class="actions">
                         <button class="btn btn-sm btn-danger" @onclick="() => DeleteList(list.Id)">Delete</button>
-                    </td>
-                </tr>
+                    </div>
+                </article>
             }
-        </tbody>
-    </table>
+        </div>
+    }
 
-    <h3>Create New List</h3>
-    <div class="d-flex gap-2 mb-3">
-        <input class="form-control w-auto" placeholder="List name" @bind="newListName" />
-        <button class="btn btn-primary" @onclick="CreateList">Create</button>
-    </div>
+    <section class="create-panel">
+        <h3>Create a new list</h3>
+        <label class="visually-hidden" for="new-list-name">List name</label>
+        <div class="d-flex gap-2">
+            <input id="new-list-name" class="form-control" placeholder="List name" @bind="newListName" />
+            <button class="btn btn-primary" @onclick="CreateList">Create</button>
+        </div>
+    </section>
 
     @if (errorMessage is not null)
     {
-        <div class="alert alert-danger">@errorMessage</div>
+        <div class="alert alert-danger mt-3">@errorMessage</div>
     }
 }
 

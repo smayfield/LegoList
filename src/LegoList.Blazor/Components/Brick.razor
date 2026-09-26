@@ -1,0 +1,23 @@
+@* A toy-brick icon drawn in SVG (not the LEGO logo). Color is any CSS color. *@
+<svg class="brick @Class" viewBox="0 0 @(Studs * 16) 40" width="@Width" aria-hidden="true"
+     style="color: @Color">
+    @for (var i = 0; i < Studs; i++)
+    {
+        <rect x="@(i * 16 + 3)" y="1" width="10" height="9" rx="2" fill="currentColor" />
+        <rect x="@(i * 16 + 3)" y="1" width="10" height="3" rx="1.5" fill="#fff" opacity="0.3" />
+    }
+    <rect x="0" y="8" width="@(Studs * 16)" height="32" rx="3" fill="currentColor" />
+    <rect x="0" y="8" width="@(Studs * 16)" height="6" rx="2" fill="#fff" opacity="0.22" />
+    <rect x="0" y="33" width="@(Studs * 16)" height="7" rx="2" fill="#000" opacity="0.18" />
+</svg>
+
+@code {
+    [Parameter] public string Color { get; set; } = "var(--brick-red)";
+    [Parameter] public int Studs { get; set; } = 2;
+    [Parameter] public string Width { get; set; } = "32";
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>The palette, for cycling colors across a list of items.</summary>
+    public static readonly string[] Palette =
+        ["var(--brick-red)", "var(--brick-blue)", "var(--brick-yellow)", "var(--brick-green)", "var(--brick-orange)"];
+}
