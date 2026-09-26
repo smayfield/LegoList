@@ -91,7 +91,19 @@ public class SetsController(
         await db.SaveChangesAsync();
         logger.LogInformation("Added set {SetId} ({SetNumber}) to list {ListId}", set.Id, set.SetNumber, listId);
 
-        return CreatedAtAction(nameof(GetAll), new { listId }, set);
+        // Return the same shape as GetAll, not the entity: set.SetList.User... forms a
+        // cycle that would make serialization throw (HTTP 500).
+        return CreatedAtAction(nameof(GetAll), new { listId }, new
+        {
+            set.Id,
+            set.SetNumber,
+            set.Theme,
+            set.Name,
+            set.Quantity,
+            set.SetListId,
+            ImageUrl = metadata?.ImageUrl,
+            PieceCount = metadata?.PieceCount
+        });
     }
 
     [HttpPut("{id}")]

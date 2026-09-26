@@ -126,6 +126,31 @@ public class SetsControllerTests
     }
 
     [Fact]
+    public async Task Create_ResponseBody_SerializesWithoutCycle()
+    {
+        var (controller, db, _, list) = Scaffold();
+        db.SetMetadatas.Add(new SetMetadata
+        {
+            SetNumber = "75192",
+            Name = "Millennium Falcon",
+            Theme = "Star Wars",
+            ImageUrl = "https://example.com/75192.jpg",
+            PieceCount = 7541,
+            FetchedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var result = await controller.Create(list.Id, new CreateSetRequest("75192", 1));
+
+        // Regression: returning the entity (set.SetList.User...) threw an object-cycle error.
+        var created = Assert.IsType<CreatedAtActionResult>(result);
+        var doc = JsonDocument.Parse(JsonSerializer.Serialize(created.Value));
+        Assert.Equal("Millennium Falcon", doc.RootElement.GetProperty("Name").GetString());
+        Assert.Equal(7541, doc.RootElement.GetProperty("PieceCount").GetInt32());
+        Assert.False(doc.RootElement.TryGetProperty("SetList", out _));
+    }
+
+    [Fact]
     public async Task Create_FetchesAndCachesMetadata_WhenNotCached()
     {
         var rebrickable = CreateRebrickable(_ => Json(
