@@ -1,0 +1,6 @@
+# Caddy gets and renews a Let's Encrypt certificate automatically, redirects
+# HTTP to HTTPS, sets X-Forwarded-* headers, and proxies Blazor's WebSockets.
+legolist.magicworld.com {
+	encode zstd gzip
+	reverse_proxy blazor:8080
+}

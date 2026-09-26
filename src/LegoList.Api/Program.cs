@@ -52,9 +52,10 @@ namespace LegoList
             if (app.Environment.IsDevelopment())
             {
                 app.MapOpenApi();
+                // In production the API is only reachable over the internal Docker
+                // network (plain HTTP from the Blazor app), so don't redirect there.
+                app.UseHttpsRedirection();
             }
-
-            app.UseHttpsRedirection();
             app.UseCors("BlazorClient");
             app.UseAuthentication();
             app.UseAuthorization();
