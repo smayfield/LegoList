@@ -47,7 +47,7 @@ else
                         <span class="qty" title="Quantity">×@set.Quantity</span>
                         @if (TryGetSafeHttpUrl(set.ImageUrl, out var imageUrl))
                         {
-                            <a href="@imageUrl" target="_blank" rel="noopener" title="Open full-size picture">
+                            <a href="@imageUrl" target="_blank" rel="noopener noreferrer" title="Open full-size picture">
                                 <img src="@imageUrl" alt="@GetSetImageAlt(set)" loading="lazy" />
                             </a>
                         }
