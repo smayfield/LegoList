@@ -64,8 +64,9 @@ else
 
     <section class="create-panel">
         <h3>Create a new list</h3>
+        <label class="visually-hidden" for="new-list-name">List name</label>
         <div class="d-flex gap-2">
-            <input class="form-control" placeholder="List name" @bind="newListName" />
+            <input id="new-list-name" class="form-control" placeholder="List name" @bind="newListName" />
             <button class="btn btn-primary" @onclick="CreateList">Create</button>
         </div>
     </section>
