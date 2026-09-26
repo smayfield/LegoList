@@ -65,7 +65,10 @@ public class ListsController(LegoListDbContext db, UserService userService, ILog
         db.SetLists.Add(list);
         await db.SaveChangesAsync();
         logger.LogInformation("Created list {Id} '{Name}' for user {UserId}", list.Id, list.Name, user.Id);
-        return CreatedAtAction(nameof(GetById), new { id = list.Id }, list);
+        // Return a plain shape (like GetAll), not the entity: list.User.SetLists points
+        // back to the list, and serializing that cycle throws (HTTP 500).
+        return CreatedAtAction(nameof(GetById), new { id = list.Id },
+            new { list.Id, list.Name, SetCount = 0 });
     }
 
     [HttpPut("{id}")]

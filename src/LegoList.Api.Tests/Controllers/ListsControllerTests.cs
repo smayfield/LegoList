@@ -124,6 +124,21 @@ public class ListsControllerTests
         Assert.Equal("Wishlist", db.SetLists.Single().Name);
     }
 
+    [Fact]
+    public async Task Create_ResponseBody_SerializesWithoutCycle()
+    {
+        var (controller, _) = CreateControllerWithDb();
+
+        var result = await controller.Create(new CreateListRequest("Wishlist"));
+
+        // Regression: returning the entity threw "A possible object cycle was detected".
+        var created = Assert.IsType<CreatedAtActionResult>(result);
+        var doc = JsonDocument.Parse(JsonSerializer.Serialize(created.Value));
+        Assert.Equal("Wishlist", doc.RootElement.GetProperty("Name").GetString());
+        Assert.Equal(0, doc.RootElement.GetProperty("SetCount").GetInt32());
+        Assert.False(doc.RootElement.TryGetProperty("User", out _));
+    }
+
     // ── Rename ───────────────────────────────────────────────────────────────
 
     [Fact]
