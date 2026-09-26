@@ -1,0 +1,84 @@
+# Production stack for legolist.magicworld.com, run on the EC2 server by deploy.sh.
+# Variables (REGISTRY, TAG, DB_PASSWORD, GOOGLE_*, REBRICKABLE_API_KEY) come from
+# the .env file deploy.sh writes from SSM Parameter Store. Local development still
+# uses the docker-compose.yml at the repo root.
+name: legolist
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - blazor
+
+  blazor:
+    image: ${REGISTRY}/legolist-blazor:${TAG}
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ApiBaseUrl: http://api:8080/
+      Authentication__Google__ClientId: ${GOOGLE_CLIENT_ID}
+      Authentication__Google__ClientSecret: ${GOOGLE_CLIENT_SECRET}
+      DataProtection__KeysPath: /keys
+    volumes:
+      - dpkeys:/keys
+    depends_on:
+      - api
+
+  api:
+    image: ${REGISTRY}/legolist-api:${TAG}
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: Host=postgres;Database=legolist;Username=legolist;Password=${DB_PASSWORD}
+      Authentication__Google__ClientId: ${GOOGLE_CLIENT_ID}
+      Rebrickable__ApiKey: ${REBRICKABLE_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: legolist
+      POSTGRES_USER: legolist
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U legolist -d legolist"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # One-shot schema migration; run explicitly by deploy.sh before the apps restart.
+  migrate:
+    image: ${REGISTRY}/legolist-migrate:${TAG}
+    profiles: ["migrate"]
+    environment:
+      LIQUIBASE_COMMAND_PASSWORD: ${DB_PASSWORD}
+      LIQUIBASE_SHOW_BANNER: "false"
+      LIQUIBASE_ANALYTICS_ENABLED: "false"
+    command:
+      - --url=jdbc:postgresql://postgres:5432/legolist
+      - --username=legolist
+      - --changelog-file=changelog/db.changelog-root.xml
+      - update
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  dpkeys:
+  caddy_data:
+  caddy_config:

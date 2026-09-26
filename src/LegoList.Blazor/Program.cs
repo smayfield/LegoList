@@ -3,8 +3,28 @@ using LegoList.Blazor.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// In production the app runs behind a reverse proxy (Caddy) that terminates TLS.
+// Trust its X-Forwarded-* headers so Google OAuth builds https:// redirect URIs.
+builder.Services.Configure<ForwardedHeadersOptions>(o =>
+{
+    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    o.KnownIPNetworks.Clear();
+    o.KnownProxies.Clear();
+});
+
+// Persist Data Protection keys so auth cookies survive container restarts/deploys.
+var keysPath = builder.Configuration["DataProtection:KeysPath"];
+if (!string.IsNullOrEmpty(keysPath))
+{
+    builder.Services.AddDataProtection()
+        .SetApplicationName("LegoList")
+        .PersistKeysToFileSystem(new DirectoryInfo(keysPath));
+}
 
 builder.Services
     .AddAuthentication(o =>
@@ -38,6 +58,8 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 var app = builder.Build();
+
+app.UseForwardedHeaders();
 
 if (!app.Environment.IsDevelopment())
 {
