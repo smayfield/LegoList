@@ -6,7 +6,11 @@
 
 <PageTitle>@(list?.Name ?? "List")</PageTitle>
 
-@if (list is null)
+@if (list is null && errorMessage is not null)
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+else if (list is null)
 {
     <p>Loading...</p>
 }

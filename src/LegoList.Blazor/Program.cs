@@ -36,6 +36,19 @@ builder.Services
     {
         o.SlidingExpiration = true;
         o.ExpireTimeSpan = TimeSpan.FromDays(14);
+        // The API accepts the Google ID token, which expires after about an hour.
+        // Once it has, drop the cookie so the next page load signs in again
+        // (Google usually does this silently, without a prompt).
+        o.Events.OnValidatePrincipal = async ctx =>
+        {
+            var token = IdToken.From(ctx.Principal);
+            var expiry = token is null ? null : IdToken.GetExpiry(token);
+            if (expiry is null || expiry <= DateTimeOffset.UtcNow.AddMinutes(1))
+            {
+                ctx.RejectPrincipal();
+                await ctx.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            }
+        };
     })
     .AddGoogle(o =>
     {
@@ -43,11 +56,22 @@ builder.Services
             ?? throw new InvalidOperationException("Authentication:Google:ClientId not configured");
         o.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"]
             ?? throw new InvalidOperationException("Authentication:Google:ClientSecret not configured");
-        o.SaveTokens = true;
+        // Keep the ID token on the user itself (a claim in the auth cookie) so it can
+        // be read inside interactive circuits, where there is no HttpContext.
+        o.Events.OnCreatingTicket = ctx =>
+        {
+            if (ctx.TokenResponse.Response?.RootElement.TryGetProperty("id_token", out var idToken) == true
+                && idToken.GetString() is { Length: > 0 } token)
+            {
+                ctx.Identity?.AddClaim(new System.Security.Claims.Claim(IdToken.ClaimType, token));
+            }
+            return Task.CompletedTask;
+        };
     });
 
 builder.Services.AddAuthorization();
-builder.Services.AddScoped<TokenProvider>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddCircuitServicesAccessor();
 builder.Services.AddTransient<ApiAuthHandler>();
 
 builder.Services.AddHttpClient("LegoListApi", c =>
@@ -71,18 +95,6 @@ app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
-
-// Token capture — runs on initial circuit HTTP request, populates scoped TokenProvider
-app.Use(async (ctx, next) =>
-{
-    if (ctx.User.Identity?.IsAuthenticated == true)
-    {
-        var token = await ctx.GetTokenAsync("id_token");
-        if (token is not null)
-            ctx.RequestServices.GetRequiredService<TokenProvider>().IdToken = token;
-    }
-    await next();
-});
 
 app.MapGet("/auth/login", async (HttpContext ctx, string? returnUrl) =>
     await ctx.ChallengeAsync(GoogleDefaults.AuthenticationScheme,
