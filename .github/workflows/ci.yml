@@ -1,0 +1,32 @@
+name: CI
+
+# Build and test every pull request (and pushes to main are covered by Deploy).
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore src/LegoList.sln
+
+      - name: Build
+        run: dotnet build src/LegoList.sln -c Release --no-restore
+
+      - name: Test
+        run: dotnet test src/LegoList.sln -c Release --no-build
