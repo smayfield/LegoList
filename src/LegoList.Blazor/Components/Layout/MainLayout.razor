@@ -1,21 +1,30 @@
 ﻿@inherits LayoutComponentBase
 
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
+<header class="site-header">
+    <div class="site-header__inner">
+        <a class="brand" href="">
+            <span class="brand__mark" aria-hidden="true"></span>LegoList
+        </a>
+
+        <nav class="site-nav" aria-label="Account">
+            <AuthorizeView>
+                <Authorized>
+                    <span class="site-nav__user">
+                        @context.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+                    </span>
+                    <a class="lb-btn lb-btn--small" href="/auth/logout" data-enhance-nav="false">Sign out</a>
+                </Authorized>
+                <NotAuthorized>
+                    <a class="lb-btn lb-btn--small lb-btn--ink" href="/auth/login" data-enhance-nav="false">Sign in with Google</a>
+                </NotAuthorized>
+            </AuthorizeView>
+        </nav>
     </div>
+</header>
 
-    <main>
-        <div class="top-row px-4">
-            <span class="brick-strip" aria-hidden="true"><Brick Color="var(--brick-red)" Width="28" /><Brick Color="var(--brick-yellow)" Width="28" /><Brick Color="var(--brick-blue)" Width="28" /><Brick Color="var(--brick-green)" Width="28" /></span>
-            <a href="https://rebrickable.com" target="_blank" rel="noopener">Set data from Rebrickable</a>
-        </div>
-
-        <article class="content px-4">
-            @Body
-        </article>
-    </main>
-</div>
+<main class="site-main">
+    @Body
+</main>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
