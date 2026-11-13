@@ -92,9 +92,11 @@ else
                 {
                     <article class="set-card">
                         <div class="set-card__picture">
-                            @if (set.ImageUrl is not null)
+                            @if (TryGetSafeHttpUrl(set.ImageUrl, out var imageUrl))
                             {
-                                <img src="@set.ImageUrl" alt="" loading="lazy" />
+                                <a class="set-card__zoom" href="@imageUrl" target="_blank" rel="noopener noreferrer" title="Open full-size picture">
+                                    <img src="@imageUrl" alt="@GetSetImageAlt(set)" loading="lazy" />
+                                </a>
                             }
                             else
                             {
@@ -256,5 +258,32 @@ else
         {
             errorMessage = $"Error: {ex.Message}";
         }
+    }
+
+    private static bool TryGetSafeHttpUrl(string? value, out string safeUrl)
+    {
+        safeUrl = string.Empty;
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
+            return false;
+
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            return false;
+
+        safeUrl = uri.ToString();
+        return true;
+    }
+
+    private static string GetSetImageAlt(LegoSetDto set)
+    {
+        if (!string.IsNullOrWhiteSpace(set.Name))
+            return set.Name;
+
+        if (!string.IsNullOrWhiteSpace(set.SetNumber))
+            return $"Image of LEGO set {set.SetNumber}";
+
+        return "LEGO set image";
     }
 }
