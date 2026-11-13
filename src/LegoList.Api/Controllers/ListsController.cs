@@ -25,6 +25,37 @@ public class ListsController(LegoListDbContext db, UserService userService, ILog
         return Ok(lists);
     }
 
+    [HttpGet("search")]
+    public async Task<IActionResult> Search([FromQuery] string? q)
+    {
+        var user = await userService.GetOrCreateAsync(User);
+        if (user is null) return Unauthorized();
+
+        var term = q?.Trim().ToLower();
+        if (string.IsNullOrEmpty(term)) return Ok(Array.Empty<object>());
+
+        var sets = await db.LegoSets
+            .Where(s => s.SetList.UserId == user.Id
+                && (s.Name.ToLower().Contains(term)
+                    || s.SetNumber.ToLower().Contains(term)
+                    || s.Theme.ToLower().Contains(term)))
+            .OrderBy(s => s.SetList.Name).ThenBy(s => s.Name)
+            .Select(s => new
+            {
+                s.Id,
+                s.SetNumber,
+                s.Theme,
+                s.Name,
+                s.Quantity,
+                s.SetListId,
+                ListName = s.SetList.Name,
+                ImageUrl = s.SetMetadata != null ? s.SetMetadata.ImageUrl : null,
+                PieceCount = s.SetMetadata != null ? s.SetMetadata.PieceCount : (int?)null
+            })
+            .ToListAsync();
+        return Ok(sets);
+    }
+
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {

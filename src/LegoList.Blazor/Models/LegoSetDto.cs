@@ -9,5 +9,6 @@ public class LegoSetDto
     public int Quantity { get; set; }
     public int SetListId { get; set; }
     public string? ImageUrl { get; set; }
+    public string? ListName { get; set; }
     public int? PieceCount { get; set; }
 }
