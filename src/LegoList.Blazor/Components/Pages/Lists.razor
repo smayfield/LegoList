@@ -46,7 +46,7 @@ else
     <div class="brick-grid">
         @foreach (var list in lists)
         {
-            <div class="brick brick--c@(list.Id % 6)">
+            <div class="brick brick--c@(list.Id % 10)">
                 <a class="brick__link" href="/lists/@list.Id">
                     <span class="brick__name">@list.Name</span>
                     <span class="brick__count">@(list.SetCount == 1 ? "1 set" : $"{list.SetCount} sets")</span>

@@ -205,7 +205,9 @@ a {
 }
 
 .lb-btn--danger {
-    --btn-ink: var(--red-edge);
+    --btn: var(--red);
+    --btn-edge: var(--red-edge);
+    --btn-ink: #fff;
 }
 
 /* ---------- Form fields ---------- */
@@ -316,12 +318,17 @@ a {
     background: repeating-linear-gradient(90deg, var(--brick) 0 30px, transparent 30px 44px);
 }
 
-.brick--c0 { --brick: #d9151b; --brick-edge: #a50e13; --brick-ink: #fff; }
-.brick--c1 { --brick: #0b5fd3; --brick-edge: #08469c; --brick-ink: #fff; }
-.brick--c2 { --brick: #ffd500; --brick-edge: #d1a900; --brick-ink: #1a2238; }
-.brick--c3 { --brick: #137a36; --brick-edge: #0c5524; --brick-ink: #fff; }
-.brick--c4 { --brick: #ff8a00; --brick-edge: #c96a00; --brick-ink: #1a2238; }
-.brick--c5 { --brick: #007f86; --brick-edge: #005a5f; --brick-ink: #fff; }
+/* Official LEGO colors (Rebrickable/BrickLink values), ten common ones; neutrals and brown left out. */
+.brick--c0 { --brick: #c91a09; --brick-edge: #971205; --brick-ink: #fff; }    /* Red */
+.brick--c1 { --brick: #0055bf; --brick-edge: #003f8c; --brick-ink: #fff; }    /* Blue */
+.brick--c2 { --brick: #f2cd37; --brick-edge: #c4a21c; --brick-ink: #1a2238; } /* Yellow */
+.brick--c3 { --brick: #237841; --brick-edge: #185430; --brick-ink: #fff; }    /* Green */
+.brick--c4 { --brick: #fe8a18; --brick-edge: #c96a0a; --brick-ink: #1a2238; } /* Orange */
+.brick--c5 { --brick: #720e0f; --brick-edge: #500a0b; --brick-ink: #fff; }    /* Dark Red */
+.brick--c6 { --brick: #e4cd9e; --brick-edge: #b9a272; --brick-ink: #1a2238; } /* Tan */
+.brick--c7 { --brick: #0a3463; --brick-edge: #062446; --brick-ink: #fff; }  /* Dark Blue */
+.brick--c8 { --brick: #bbe90b; --brick-edge: #8fb306; --brick-ink: #1a2238; } /* Lime */
+.brick--c9 { --brick: #36aebf; --brick-edge: #26828f; --brick-ink: #1a2238; } /* Medium Azure */
 
 .brick:hover,
 .brick:focus-within {

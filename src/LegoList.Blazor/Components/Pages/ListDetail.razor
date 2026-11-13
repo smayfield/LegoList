@@ -116,7 +116,7 @@ else
                                 <span class="set-card__pieces">@pieces.ToString("N0") pieces</span>
                             }
                             <div class="set-card__actions">
-                                <button class="lb-btn lb-btn--small" aria-label="Edit @set.Name" @onclick="() => StartEdit(set)">Edit</button>
+                                <button class="lb-btn lb-btn--small lb-btn--blue" aria-label="Edit @set.Name" @onclick="() => StartEdit(set)">Edit</button>
                                 <button class="lb-btn lb-btn--small lb-btn--danger" aria-label="Delete @set.Name" @onclick="() => DeleteSet(set.Id)">Delete</button>
                             </div>
                         </div>
