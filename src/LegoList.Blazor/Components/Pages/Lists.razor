@@ -43,6 +43,54 @@ else
         }
     </div>
 
+    <div class="search-bar">
+        <label class="lb-field">
+            Search your sets
+            <input class="lb-input" type="search" placeholder="Set name, set number, or theme"
+                   @bind="searchText" @bind:event="oninput" @bind:after="RunSearch" />
+        </label>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(searchText))
+    {
+        @if (searchResults is null)
+        {
+            <p class="page-head__summary">Searching…</p>
+        }
+        else if (searchResults.Count == 0)
+        {
+            <div class="empty"><strong>No matching sets.</strong> Try a different name, number, or theme.</div>
+        }
+        else
+        {
+            <p class="page-head__summary">@(searchResults.Count == 1 ? "1 matching set" : $"{searchResults.Count} matching sets") across your lists.</p>
+            <div class="set-grid">
+                @foreach (var set in searchResults)
+                {
+                    <article class="set-card">
+                        <div class="set-card__picture">
+                            @if (Uri.TryCreate(set.ImageUrl, UriKind.Absolute, out var img) && (img.Scheme == Uri.UriSchemeHttp || img.Scheme == Uri.UriSchemeHttps))
+                            {
+                                <img src="@img" alt="@set.Name" loading="lazy" />
+                            }
+                            else
+                            {
+                                <span>No picture</span>
+                            }
+                            <span class="set-card__number">@set.SetNumber</span>
+                        </div>
+                        <div class="set-card__body">
+                            <span class="set-card__theme">@set.Theme</span>
+                            <h2 class="set-card__name">@set.Name</h2>
+                            <a href="/lists/@set.SetListId">In list: @set.ListName</a>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    }
+    else
+    {
     <div class="brick-grid">
         @foreach (var list in lists)
         {
@@ -64,6 +112,8 @@ else
         </div>
     </div>
 
+    }
+
     @if (errorMessage is not null)
     {
         <div class="notice" role="alert">@errorMessage</div>
@@ -75,6 +125,31 @@ else
     private string newListName = string.Empty;
     private string? errorMessage;
     private bool? signedIn;
+    private string searchText = string.Empty;
+    private List<LegoSetDto>? searchResults;
+    private int searchVersion;
+
+    private async Task RunSearch()
+    {
+        var term = searchText.Trim();
+        var version = ++searchVersion;
+        searchResults = null;
+        if (term.Length == 0) return;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            var results = await http.GetFromJsonAsync<List<LegoSetDto>>($"api/lists/search?q={Uri.EscapeDataString(term)}");
+            if (version == searchVersion) searchResults = results ?? [];
+        }
+        catch (Exception ex)
+        {
+            if (version == searchVersion)
+            {
+                searchResults = [];
+                errorMessage = $"Search failed: {ex.Message}";
+            }
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {

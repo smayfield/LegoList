@@ -25,6 +25,38 @@ public class ListsControllerTests
         return (controller, db);
     }
 
+    // ── Search ───────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("falcon", 1)]
+    [InlineData("75192", 1)]
+    [InlineData("STAR WARS", 2)]
+    [InlineData("zzz", 0)]
+    [InlineData("  ", 0)]
+    public async Task Search_MatchesNameNumberOrTheme_OnlyForCurrentUser(string q, int expected)
+    {
+        var (controller, db) = CreateControllerWithDb("sub-1");
+        var u1 = new User { GoogleSub = "sub-1", Email = "a@a.com", CreatedAt = DateTime.UtcNow };
+        var u2 = new User { GoogleSub = "sub-2", Email = "b@b.com", CreatedAt = DateTime.UtcNow };
+        db.Users.AddRange(u1, u2);
+        await db.SaveChangesAsync();
+        var mine = new SetList { Name = "Mine", UserId = u1.Id };
+        var theirs = new SetList { Name = "Theirs", UserId = u2.Id };
+        db.SetLists.AddRange(mine, theirs);
+        await db.SaveChangesAsync();
+        db.LegoSets.AddRange(
+            new LegoSet { SetNumber = "75192", Theme = "Star Wars", Name = "Millennium Falcon", Quantity = 1, SetListId = mine.Id },
+            new LegoSet { SetNumber = "75257", Theme = "Star Wars", Name = "Rise Set", Quantity = 1, SetListId = mine.Id },
+            new LegoSet { SetNumber = "10001", Theme = "Star Wars", Name = "Not mine", Quantity = 1, SetListId = theirs.Id });
+        await db.SaveChangesAsync();
+
+        var result = await controller.Search(q);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var doc = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));
+        Assert.Equal(expected, doc.RootElement.GetArrayLength());
+    }
+
     // ── GetAll ───────────────────────────────────────────────────────────────
 
     [Fact]
