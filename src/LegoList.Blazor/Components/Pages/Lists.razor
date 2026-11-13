@@ -4,63 +4,69 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @using LegoList.Blazor.Models
 
-<PageTitle>My Lego Lists</PageTitle>
-
-<h1>My Lego Lists</h1>
+<PageTitle>My lists</PageTitle>
 
 @if (signedIn == false)
 {
-    <div class="card shadow-sm" style="max-width: 32rem;">
-        <div class="card-body">
-            <h2 class="h4 card-title">Welcome to LegoList</h2>
-            <p class="card-text">Keep track of your LEGO sets in lists. Names, themes, pictures, and piece
-                counts are filled in automatically from Rebrickable.</p>
-            <p class="card-text">Sign in to see and manage your lists.</p>
-            <a class="btn btn-primary" href="/auth/login" data-enhance-nav="false">Sign in with Google</a>
+    <section class="welcome">
+        <div class="welcome__text">
+            <h1>Every set you own, sorted into lists.</h1>
+            <p>Type in a set number and LegoList fills in the name, theme, picture, and piece count
+                from Rebrickable.</p>
+            <a class="lb-btn lb-btn--red" href="/auth/login" data-enhance-nav="false">Sign in with Google</a>
         </div>
-    </div>
+        <div class="stack" aria-hidden="true">
+            <div class="brick brick--c1"></div>
+            <div class="brick brick--c2"></div>
+            <div class="brick brick--c0"></div>
+            <div class="brick brick--c3"></div>
+        </div>
+    </section>
 }
 else if (lists is null && errorMessage is not null)
 {
-    <div class="alert alert-danger">@errorMessage</div>
+    <h1>My lists</h1>
+    <div class="notice" role="alert">@errorMessage</div>
 }
 else if (lists is null)
 {
-    <p>Loading...</p>
+    <h1>My lists</h1>
+    <p class="page-head__summary">Loading your lists…</p>
 }
 else
 {
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Name</th>
-                <th>Sets</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var list in lists)
-            {
-                <tr>
-                    <td><a href="/lists/@list.Id">@list.Name</a></td>
-                    <td>@list.SetCount</td>
-                    <td>
-                        <button class="btn btn-sm btn-danger" @onclick="() => DeleteList(list.Id)">Delete</button>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
+    <div class="page-head">
+        <h1>My lists</h1>
+        @if (lists.Count == 0)
+        {
+            <p class="page-head__summary">No lists yet. Name your first one below.</p>
+        }
+    </div>
 
-    <h3>Create New List</h3>
-    <div class="d-flex gap-2 mb-3">
-        <input class="form-control w-auto" placeholder="List name" @bind="newListName" />
-        <button class="btn btn-primary" @onclick="CreateList">Create</button>
+    <div class="brick-grid">
+        @foreach (var list in lists)
+        {
+            <div class="brick brick--c@(list.Id % 6)">
+                <a class="brick__link" href="/lists/@list.Id">
+                    <span class="brick__name">@list.Name</span>
+                    <span class="brick__count">@(list.SetCount == 1 ? "1 set" : $"{list.SetCount} sets")</span>
+                </a>
+                <button class="brick__delete" aria-label="Delete @list.Name" @onclick="() => DeleteList(list.Id)">Delete</button>
+            </div>
+        }
+
+        <div class="brick-slot">
+            <label class="brick-slot__title" for="new-list-name">New list</label>
+            <div class="brick-slot__row">
+                <input id="new-list-name" class="lb-input" placeholder="e.g. Star Wars" @bind="newListName" />
+                <button class="lb-btn lb-btn--red" @onclick="CreateList">Create list</button>
+            </div>
+        </div>
     </div>
 
     @if (errorMessage is not null)
     {
-        <div class="alert alert-danger">@errorMessage</div>
+        <div class="notice" role="alert">@errorMessage</div>
     }
 }
 

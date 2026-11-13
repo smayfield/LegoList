@@ -1,20 +1,30 @@
 ﻿@inherits LayoutComponentBase
 
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
+<header class="site-header">
+    <div class="site-header__inner">
+        <a class="brand" href="">
+            <span class="brand__mark" aria-hidden="true"></span>LegoList
+        </a>
+
+        <nav class="site-nav" aria-label="Account">
+            <AuthorizeView>
+                <Authorized>
+                    <span class="site-nav__user">
+                        @context.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+                    </span>
+                    <a class="lb-btn lb-btn--small" href="/auth/logout" data-enhance-nav="false">Sign out</a>
+                </Authorized>
+                <NotAuthorized>
+                    <a class="lb-btn lb-btn--small lb-btn--ink" href="/auth/login" data-enhance-nav="false">Sign in with Google</a>
+                </NotAuthorized>
+            </AuthorizeView>
+        </nav>
     </div>
+</header>
 
-    <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
-        </div>
-
-        <article class="content px-4">
-            @Body
-        </article>
-    </main>
-</div>
+<main class="site-main">
+    @Body
+</main>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.

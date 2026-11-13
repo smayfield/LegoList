@@ -9,106 +9,119 @@
 
 @if (list is null && errorMessage is not null)
 {
-    <div class="alert alert-danger">@errorMessage</div>
+    <a class="back-link" href="/">‹ All lists</a>
+    <div class="notice" role="alert">@errorMessage</div>
 }
 else if (list is null)
 {
-    <p>Loading...</p>
+    <p class="page-head__summary">Loading this list…</p>
 }
 else
 {
-    <nav aria-label="breadcrumb">
-        <ol class="breadcrumb">
-            <li class="breadcrumb-item"><a href="/">Lists</a></li>
-            <li class="breadcrumb-item active">@list.Name</li>
-        </ol>
-    </nav>
-
-    <h1>@list.Name</h1>
-
-    @if (list.Sets.Count == 0)
-    {
-        <p class="text-muted">No sets yet. Add one below.</p>
-    }
-    else
-    {
-        <table class="table align-middle">
-            <thead>
-                <tr>
-                    <th></th>
-                    <th>Set #</th>
-                    <th>Theme</th>
-                    <th>Name</th>
-                    <th>Pieces</th>
-                    <th>Qty</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var set in list.Sets)
-                {
-                    @if (editingSetId == set.Id)
-                    {
-                        <tr>
-                            <td></td>
-                            <td><input class="form-control form-control-sm" @bind="editSetNumber" /></td>
-                            <td><input class="form-control form-control-sm" @bind="editTheme" /></td>
-                            <td><input class="form-control form-control-sm" @bind="editName" /></td>
-                            <td class="text-muted">@(set.PieceCount?.ToString() ?? "—")</td>
-                            <td><input class="form-control form-control-sm" type="number" @bind="editQuantity" style="width:70px" /></td>
-                            <td>
-                                <button class="btn btn-sm btn-success me-1" @onclick="SaveEdit">Save</button>
-                                <button class="btn btn-sm btn-secondary" @onclick="CancelEdit">Cancel</button>
-                            </td>
-                        </tr>
-                    }
-                    else
-                    {
-                        <tr>
-                            <td style="width:70px">
-                                @if (set.ImageUrl is not null)
-                                {
-                                    <img src="@set.ImageUrl" alt="@set.Name" style="height:60px;object-fit:contain" />
-                                }
-                            </td>
-                            <td>@set.SetNumber</td>
-                            <td>@set.Theme</td>
-                            <td>@set.Name</td>
-                            <td>@(set.PieceCount?.ToString() ?? "—")</td>
-                            <td>@set.Quantity</td>
-                            <td>
-                                <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => StartEdit(set)">Edit</button>
-                                <button class="btn btn-sm btn-danger" @onclick="() => DeleteSet(set.Id)">Delete</button>
-                            </td>
-                        </tr>
-                    }
-                }
-            </tbody>
-        </table>
-    }
-
-    <h3>Add Set</h3>
-    <div class="row g-2 mb-3 align-items-end">
-        <div class="col-auto">
-            <label class="form-label">Set #</label>
-            <input class="form-control" @bind="newSetNumber" placeholder="e.g. 75192" disabled="@isAdding" />
-        </div>
-        <div class="col-auto">
-            <label class="form-label">Qty</label>
-            <input class="form-control" type="number" @bind="newQuantity" style="width:80px" disabled="@isAdding" />
-        </div>
-        <div class="col-auto">
-            <button class="btn btn-primary" @onclick="AddSet" disabled="@isAdding">
-                @if (isAdding) { <span class="spinner-border spinner-border-sm me-1" role="status"></span> <span>Fetching...</span> }
-                else { <span>Add</span> }
-            </button>
-        </div>
+    <div class="page-head">
+        <a class="back-link" href="/">‹ All lists</a>
+        <h1>@list.Name</h1>
+        @if (list.Sets.Count > 0)
+        {
+            <p class="page-head__summary">@Summary()</p>
+        }
     </div>
-    <p class="text-muted small">Name, theme, image, and piece count are retrieved automatically from Rebrickable.</p>
+
+    <div class="add-bar">
+        <h2 class="add-bar__title">Add a set</h2>
+        <label class="lb-field lb-field--number">
+            Set number
+            <input class="lb-input" @bind="newSetNumber" placeholder="e.g. 75192" disabled="@isAdding" />
+        </label>
+        <label class="lb-field">
+            Quantity
+            <input class="lb-input lb-input--qty" type="number" min="1" @bind="newQuantity" disabled="@isAdding" />
+        </label>
+        <button class="lb-btn lb-btn--red" @onclick="AddSet" disabled="@isAdding">
+            @if (isAdding) { <span class="spinner" role="status"></span> <span>Looking up set…</span> }
+            else { <span>Add set</span> }
+        </button>
+    </div>
+    <p class="add-hint">The name, theme, picture, and piece count come from Rebrickable.</p>
 
     @if (errorMessage is not null)
     {
-        <div class="alert alert-danger">@errorMessage</div>
+        <div class="notice mb-4" role="alert">@errorMessage</div>
+    }
+
+    @if (list.Sets.Count == 0)
+    {
+        <div class="empty">
+            <strong>This list is empty.</strong>
+            Add your first set with its set number above.
+        </div>
+    }
+    else
+    {
+        <div class="set-grid">
+            @foreach (var set in list.Sets)
+            {
+                @if (editingSetId == set.Id)
+                {
+                    <article class="set-card set-card--editing">
+                        <div class="set-card__body">
+                            <label class="lb-field">
+                                Set number
+                                <input class="lb-input" @bind="editSetNumber" />
+                            </label>
+                            <label class="lb-field">
+                                Theme
+                                <input class="lb-input" @bind="editTheme" />
+                            </label>
+                            <label class="lb-field">
+                                Name
+                                <input class="lb-input" @bind="editName" />
+                            </label>
+                            <label class="lb-field">
+                                Quantity
+                                <input class="lb-input lb-input--qty" type="number" min="1" @bind="editQuantity" />
+                            </label>
+                            <div class="set-card__actions">
+                                <button class="lb-btn lb-btn--small lb-btn--blue" @onclick="SaveEdit">Save changes</button>
+                                <button class="lb-btn lb-btn--small" @onclick="CancelEdit">Cancel</button>
+                            </div>
+                        </div>
+                    </article>
+                }
+                else
+                {
+                    <article class="set-card">
+                        <div class="set-card__picture">
+                            @if (set.ImageUrl is not null)
+                            {
+                                <img src="@set.ImageUrl" alt="" loading="lazy" />
+                            }
+                            else
+                            {
+                                <span>No picture</span>
+                            }
+                            <span class="set-card__number">@set.SetNumber</span>
+                            @if (set.Quantity != 1)
+                            {
+                                <span class="set-card__qty" title="Quantity">×@set.Quantity</span>
+                            }
+                        </div>
+                        <div class="set-card__body">
+                            <span class="set-card__theme">@set.Theme</span>
+                            <h2 class="set-card__name">@set.Name</h2>
+                            @if (set.PieceCount is int pieces)
+                            {
+                                <span class="set-card__pieces">@pieces.ToString("N0") pieces</span>
+                            }
+                            <div class="set-card__actions">
+                                <button class="lb-btn lb-btn--small" aria-label="Edit @set.Name" @onclick="() => StartEdit(set)">Edit</button>
+                                <button class="lb-btn lb-btn--small lb-btn--danger" aria-label="Delete @set.Name" @onclick="() => DeleteSet(set.Id)">Delete</button>
+                            </div>
+                        </div>
+                    </article>
+                }
+            }
+        </div>
     }
 }
 
@@ -133,6 +146,14 @@ else
     protected override async Task OnInitializedAsync()
     {
         await LoadList();
+    }
+
+    private string Summary()
+    {
+        var sets = list!.Sets.Sum(s => s.Quantity);
+        var pieces = list.Sets.Sum(s => (s.PieceCount ?? 0) * s.Quantity);
+        var text = sets == 1 ? "1 set" : $"{sets:N0} sets";
+        return pieces > 0 ? $"{text}, {pieces:N0} pieces in all." : $"{text}.";
     }
 
     private async Task LoadList()
