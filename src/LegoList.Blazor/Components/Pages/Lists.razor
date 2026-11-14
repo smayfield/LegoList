@@ -102,9 +102,9 @@ else
             <span class="list-tools__status">@(selected.Count == 0 ? "Tick lists to export or merge them, or export everything." : $"{selected.Count} selected")</span>
             <a class="lb-btn lb-btn--small" href="@ExportUrl("csv")" download data-enhance-nav="false">Export @(selected.Count == 0 ? "all" : "selected") as CSV</a>
             <a class="lb-btn lb-btn--small" href="@ExportUrl("pdf")" download data-enhance-nav="false">Export @(selected.Count == 0 ? "all" : "selected") as PDF</a>
-            @if (selected.Count == 2)
+            @if (selected.Count >= 2)
             {
-                <button class="lb-btn lb-btn--small lb-btn--blue" @onclick="OpenMerge">Merge the two selected…</button>
+                <button class="lb-btn lb-btn--small lb-btn--blue" @onclick="OpenMerge">Merge the @selected.Count selected…</button>
             }
             @if (selected.Count > 0)
             {
@@ -113,30 +113,29 @@ else
         </div>
     }
 
-    @if (mergeOpen && SelectedPair() is { } pair)
+    @if (mergeOpen && SelectedLists() is { Count: >= 2 } mergeLists)
     {
         <section class="merge-panel" aria-labelledby="merge-title">
-            <h2 id="merge-title">Merge “@pair.First.Name” and “@pair.Second.Name”</h2>
-            <p>All the sets end up in one list and the other list is removed. A set that is in both lists
-                appears once, with the quantities added together.</p>
+            <h2 id="merge-title">Merge @mergeLists.Count lists</h2>
+            <p>@string.Join(", ", mergeLists.Select(l => $"“{l.Name}”")) — all the sets end up in one list and the
+                others are removed. A set that is in more than one list appears once, with the quantities added together.</p>
             <fieldset>
                 <legend>What should the merged list be called?</legend>
+                @foreach (var l in mergeLists)
+                {
+                    var listId = l.Id;
+                    <label class="merge-panel__choice">
+                        <input type="radio" name="merge-name" checked="@(!mergeUseNewName && mergeKeepId == listId)"
+                               @onchange="@(() => { mergeUseNewName = false; mergeKeepId = listId; })" />
+                        Keep “@l.Name”
+                    </label>
+                }
                 <label class="merge-panel__choice">
-                    <input type="radio" name="merge-name" checked="@(mergeChoice == MergeNameChoice.KeepFirst)"
-                           @onchange="@(() => mergeChoice = MergeNameChoice.KeepFirst)" />
-                    Keep “@pair.First.Name”
-                </label>
-                <label class="merge-panel__choice">
-                    <input type="radio" name="merge-name" checked="@(mergeChoice == MergeNameChoice.KeepSecond)"
-                           @onchange="@(() => mergeChoice = MergeNameChoice.KeepSecond)" />
-                    Keep “@pair.Second.Name”
-                </label>
-                <label class="merge-panel__choice">
-                    <input type="radio" name="merge-name" checked="@(mergeChoice == MergeNameChoice.NewName)"
-                           @onchange="@(() => mergeChoice = MergeNameChoice.NewName)" />
+                    <input type="radio" name="merge-name" checked="@mergeUseNewName"
+                           @onchange="@(() => mergeUseNewName = true)" />
                     A new name
                 </label>
-                @if (mergeChoice == MergeNameChoice.NewName)
+                @if (mergeUseNewName)
                 {
                     <input class="lb-input merge-panel__name" aria-label="New list name" maxlength="255"
                            placeholder="e.g. Everything Star Wars" @bind="mergeNewName" @bind:event="oninput" />
@@ -144,7 +143,7 @@ else
             </fieldset>
             <div class="merge-panel__actions">
                 <button class="lb-btn lb-btn--red" @onclick="DoMerge"
-                        disabled="@(isMerging || (mergeChoice == MergeNameChoice.NewName && string.IsNullOrWhiteSpace(mergeNewName)))">
+                        disabled="@(isMerging || (mergeUseNewName && string.IsNullOrWhiteSpace(mergeNewName)))">
                     @(isMerging ? "Merging…" : "Merge lists")
                 </button>
                 <button class="lb-btn" @onclick="CloseMerge" disabled="@isMerging">Cancel</button>
@@ -218,10 +217,10 @@ else
     private string renameText = string.Empty;
 
     // Merge
-    private enum MergeNameChoice { KeepFirst, KeepSecond, NewName }
     private bool mergeOpen;
     private bool isMerging;
-    private MergeNameChoice mergeChoice = MergeNameChoice.KeepFirst;
+    private bool mergeUseNewName;
+    private int mergeKeepId;
     private string mergeNewName = string.Empty;
 
     private string searchText = string.Empty;
@@ -303,7 +302,8 @@ else
     private void ToggleSelected(int id, bool isSelected)
     {
         if (isSelected) selected.Add(id); else selected.Remove(id);
-        if (selected.Count != 2) mergeOpen = false;
+        if (selected.Count < 2) mergeOpen = false;
+        else if (mergeOpen && !selected.Contains(mergeKeepId)) mergeKeepId = SelectedLists()![0].Id;
     }
 
     private void ClearSelection()
@@ -346,44 +346,47 @@ else
         }
     }
 
-    // The two selected lists, in the order they appear on the page.
-    private (SetListDto First, SetListDto Second)? SelectedPair()
+    // The selected lists, in the order they appear on the page (null when fewer than two are selected).
+    private List<SetListDto>? SelectedLists()
     {
-        if (lists is null || selected.Count != 2) return null;
-        var pair = lists.Where(l => selected.Contains(l.Id)).ToList();
-        return pair.Count == 2 ? (pair[0], pair[1]) : null;
+        if (lists is null || selected.Count < 2) return null;
+        var picked = lists.Where(l => selected.Contains(l.Id)).ToList();
+        return picked.Count >= 2 ? picked : null;
     }
 
     private void OpenMerge()
     {
-        mergeChoice = MergeNameChoice.KeepFirst;
+        var picked = SelectedLists();
+        mergeUseNewName = false;
+        mergeKeepId = picked?[0].Id ?? 0;
         mergeNewName = string.Empty;
         errorMessage = null;
         infoMessage = null;
-        mergeOpen = SelectedPair() is not null;
+        mergeOpen = picked is not null;
     }
 
     private void CloseMerge() => mergeOpen = false;
 
     private async Task DoMerge()
     {
-        if (SelectedPair() is not { } pair) return;
-        var (first, second) = pair;
+        if (SelectedLists() is not { } picked) return;
 
-        // The surviving list is the one whose name is kept; with a new name either one will do.
-        var (keep, absorb) = mergeChoice == MergeNameChoice.KeepSecond ? (second, first) : (first, second);
-        var newName = mergeChoice == MergeNameChoice.NewName ? mergeNewName.Trim() : null;
-        if (mergeChoice == MergeNameChoice.NewName && string.IsNullOrEmpty(newName)) return;
+        // The surviving list is the one whose name is kept; with a new name the first one will do.
+        var keep = mergeUseNewName ? picked[0] : picked.FirstOrDefault(l => l.Id == mergeKeepId) ?? picked[0];
+        var absorb = picked.Where(l => l.Id != keep.Id).ToList();
+        var newName = mergeUseNewName ? mergeNewName.Trim() : null;
+        if (mergeUseNewName && string.IsNullOrEmpty(newName)) return;
 
         isMerging = true;
         try
         {
             var http = HttpClientFactory.CreateClient("LegoListApi");
-            var response = await http.PostAsJsonAsync($"api/lists/{keep.Id}/merge", new { FromListId = absorb.Id, NewName = newName });
+            var response = await http.PostAsJsonAsync($"api/lists/{keep.Id}/merge", new { FromListIds = absorb.Select(l => l.Id).ToList(), NewName = newName });
             if (response.IsSuccessStatusCode)
             {
                 var merged = await response.Content.ReadFromJsonAsync<SetListDto>();
-                infoMessage = $"Merged “{first.Name}” and “{second.Name}” into “{merged?.Name ?? newName ?? keep.Name}”.";
+                var names = string.Join(", ", picked.Select(l => $"“{l.Name}”"));
+                infoMessage = $"Merged {names} into “{merged?.Name ?? newName ?? keep.Name}”.";
                 errorMessage = null;
                 selected.Clear();
                 mergeOpen = false;

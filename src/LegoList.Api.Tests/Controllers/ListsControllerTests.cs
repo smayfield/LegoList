@@ -140,7 +140,7 @@ public class ListsControllerTests
         var target = await AddList(db, user, "Target", ("111", 1));
         var source = await AddList(db, user, "Source", ("222", 1), ("333", 2));
 
-        var result = await controller.Merge(target.Id, new MergeListsRequest(source.Id, null));
+        var result = await controller.Merge(target.Id, new MergeListsRequest([source.Id], null));
 
         var ok = Assert.IsType<OkObjectResult>(result);
         var doc = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));
@@ -158,7 +158,7 @@ public class ListsControllerTests
         var target = await AddList(db, user, "Target", ("111", 1), ("222", 1));
         var source = await AddList(db, user, "Source", ("111", 4));
 
-        await controller.Merge(target.Id, new MergeListsRequest(source.Id, null));
+        await controller.Merge(target.Id, new MergeListsRequest([source.Id], null));
 
         Assert.Equal(2, db.LegoSets.Count());
         Assert.Equal(5, db.LegoSets.Single(s => s.SetNumber == "111").Quantity);
@@ -171,7 +171,7 @@ public class ListsControllerTests
         var target = await AddList(db, user, "Target");
         var source = await AddList(db, user, "Source");
 
-        await controller.Merge(target.Id, new MergeListsRequest(source.Id, "  Everything  "));
+        await controller.Merge(target.Id, new MergeListsRequest([source.Id], "  Everything  "));
 
         Assert.Equal("Everything", Assert.Single(db.SetLists).Name);
     }
@@ -183,10 +183,54 @@ public class ListsControllerTests
         var target = await AddList(db, user, "Target");
         var source = await AddList(db, user, "Source");
 
-        var result = await controller.Merge(target.Id, new MergeListsRequest(source.Id, "  "));
+        var result = await controller.Merge(target.Id, new MergeListsRequest([source.Id], "  "));
 
         Assert.IsType<BadRequestObjectResult>(result);
         Assert.Equal(2, db.SetLists.Count());
+    }
+
+    [Fact]
+    public async Task Merge_CombinesAnyNumberOfLists()
+    {
+        var (controller, db, user) = await ScaffoldUser();
+        var target = await AddList(db, user, "Target", ("111", 1));
+        var second = await AddList(db, user, "Second", ("111", 2), ("222", 1));
+        var third = await AddList(db, user, "Third", ("222", 3), ("333", 1));
+        var fourth = await AddList(db, user, "Fourth", ("444", 1));
+
+        var result = await controller.Merge(target.Id, new MergeListsRequest([second.Id, third.Id, fourth.Id], "All"));
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var doc = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));
+        Assert.Equal("All", doc.RootElement.GetProperty("Name").GetString());
+        Assert.Equal(4, doc.RootElement.GetProperty("SetCount").GetInt32());
+        Assert.Equal(target.Id, Assert.Single(db.SetLists).Id);
+        Assert.Equal(4, db.LegoSets.Count());
+        Assert.Equal(3, db.LegoSets.Single(s => s.SetNumber == "111").Quantity);
+        Assert.Equal(4, db.LegoSets.Single(s => s.SetNumber == "222").Quantity);
+    }
+
+    [Fact]
+    public async Task Merge_RejectsAnEmptySourceList()
+    {
+        var (controller, db, user) = await ScaffoldUser();
+        var target = await AddList(db, user, "Target");
+
+        Assert.IsType<BadRequestObjectResult>(await controller.Merge(target.Id, new MergeListsRequest([], null)));
+    }
+
+    [Fact]
+    public async Task Merge_ReturnsNotFound_AndChangesNothing_WhenAnySourceIsMissing()
+    {
+        var (controller, db, user) = await ScaffoldUser();
+        var target = await AddList(db, user, "Target", ("111", 1));
+        var source = await AddList(db, user, "Source", ("222", 1));
+
+        var result = await controller.Merge(target.Id, new MergeListsRequest([source.Id, 9999], null));
+
+        Assert.IsType<NotFoundResult>(result);
+        Assert.Equal(2, db.SetLists.Count());
+        Assert.Equal(2, db.LegoSets.Count());
     }
 
     [Fact]
@@ -195,7 +239,7 @@ public class ListsControllerTests
         var (controller, db, user) = await ScaffoldUser();
         var list = await AddList(db, user, "Only", ("111", 1));
 
-        var result = await controller.Merge(list.Id, new MergeListsRequest(list.Id, null));
+        var result = await controller.Merge(list.Id, new MergeListsRequest([list.Id], null));
 
         Assert.IsType<BadRequestObjectResult>(result);
         Assert.Single(db.LegoSets);
@@ -211,8 +255,8 @@ public class ListsControllerTests
         var mine = await AddList(db, user, "Mine", ("111", 1));
         var theirs = await AddList(db, other, "Theirs", ("222", 1));
 
-        Assert.IsType<NotFoundResult>(await controller.Merge(mine.Id, new MergeListsRequest(theirs.Id, null)));
-        Assert.IsType<NotFoundResult>(await controller.Merge(theirs.Id, new MergeListsRequest(mine.Id, null)));
+        Assert.IsType<NotFoundResult>(await controller.Merge(mine.Id, new MergeListsRequest([theirs.Id], null)));
+        Assert.IsType<NotFoundResult>(await controller.Merge(theirs.Id, new MergeListsRequest([mine.Id], null)));
         Assert.Equal(2, db.SetLists.Count());
         Assert.Equal(2, db.LegoSets.Count());
     }
