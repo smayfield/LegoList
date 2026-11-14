@@ -23,6 +23,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Pure parsing logic that lives in the Blazor app; compiled here so it can be tested. -->
+    <Compile Include="..\LegoList.Blazor\Services\BulkSetParser.cs" Link="Linked\BulkSetParser.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\LegoList.Api\LegoList.Api.csproj" />
   </ItemGroup>
 

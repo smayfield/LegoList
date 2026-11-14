@@ -30,11 +30,11 @@ public class SetsController(
     /// Returns cached metadata, or fetches it from Rebrickable. Only definitive answers are stored:
     /// a rate limit or outage must not leave a permanently empty row behind.
     /// </summary>
-    private async Task<SetMetadata?> ResolveMetadataAsync(string setNumber)
+    private async Task<(SetMetadata? Metadata, bool LookupFailed)> ResolveMetadataAsync(string setNumber, bool force = false)
     {
         var cached = await db.SetMetadatas.FindAsync(setNumber);
-        if (cached is not null && (cached.Name is not null || cached.FetchedAt > DateTime.UtcNow - EmptyMetadataRetryAfter))
-            return cached;
+        if (!force && cached is not null && (cached.Name is not null || cached.FetchedAt > DateTime.UtcNow - EmptyMetadataRetryAfter))
+            return (cached, false);
 
         var fetched = await rebrickableService.FetchAsync(setNumber);
 
@@ -43,7 +43,7 @@ public class SetsController(
             // The set number comes from the user; strip line breaks so it can't forge log lines.
             var logSafe = setNumber.Replace("\r", "").Replace("\n", "");
             logger.LogWarning("Rebrickable lookup for {SetNumber} failed; not caching so it is retried next time", logSafe);
-            return cached ?? new SetMetadata
+            var transient = cached ?? new SetMetadata
             {
                 SetNumber = setNumber,
                 Name = fetched.Name,
@@ -52,6 +52,7 @@ public class SetsController(
                 PieceCount = fetched.PieceCount,
                 FetchedAt = DateTime.UtcNow
             };
+            return (transient, true);
         }
 
         if (cached is not null)
@@ -62,7 +63,7 @@ public class SetsController(
             cached.PieceCount = fetched.PieceCount;
             cached.FetchedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
-            return cached;
+            return (cached, false);
         }
 
         try
@@ -78,13 +79,13 @@ public class SetsController(
             };
             db.SetMetadatas.Add(metadata);
             await db.SaveChangesAsync();
-            return metadata;
+            return (metadata, false);
         }
         catch (DbUpdateException)
         {
             // Another concurrent request cached it first; reload
             db.ChangeTracker.Clear();
-            return await db.SetMetadatas.FindAsync(setNumber);
+            return (await db.SetMetadatas.FindAsync(setNumber), false);
         }
     }
 
@@ -117,7 +118,7 @@ public class SetsController(
         var list = await GetOwnedListAsync(listId);
         if (list is null) return NotFound();
 
-        var metadata = await ResolveMetadataAsync(request.SetNumber);
+        var (metadata, lookupFailed) = await ResolveMetadataAsync(request.SetNumber);
 
         var set = new LegoSet
         {
@@ -142,7 +143,57 @@ public class SetsController(
             set.Quantity,
             set.SetListId,
             ImageUrl = metadata?.ImageUrl,
-            PieceCount = metadata?.PieceCount
+            PieceCount = metadata?.PieceCount,
+            // True when Rebrickable couldn't be reached (rate limit/outage): the set was added
+            // without details, and the refresh action can fill them in later.
+            LookupFailed = lookupFailed
+        });
+    }
+
+    /// <summary>Looks the set up on Rebrickable again (ignoring the cache) and fills in its details.</summary>
+    [HttpPost("{id}/refresh")]
+    public async Task<IActionResult> Refresh(int listId, int id)
+    {
+        var list = await GetOwnedListAsync(listId);
+        if (list is null) return NotFound();
+
+        var setNumber = await db.LegoSets
+            .Where(s => s.Id == id && s.SetListId == listId)
+            .Select(s => s.SetNumber)
+            .FirstOrDefaultAsync();
+        if (setNumber is null) return NotFound();
+
+        var (metadata, lookupFailed) = await ResolveMetadataAsync(setNumber, force: true);
+        if (lookupFailed)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+            {
+                Error = "Couldn't reach Rebrickable right now (it may be rate limiting). Try again in a minute."
+            });
+        }
+
+        // ResolveMetadataAsync may reset the change tracker, so load the set afterwards.
+        var set = await db.LegoSets.FirstAsync(s => s.Id == id && s.SetListId == listId);
+        var found = metadata?.Name is not null;
+        if (found)
+        {
+            // Only fill in what Rebrickable returned; don't blank out anything the user typed.
+            set.Name = metadata!.Name!;
+            if (metadata.Theme is not null) set.Theme = metadata.Theme;
+            await db.SaveChangesAsync();
+        }
+
+        return Ok(new
+        {
+            set.Id,
+            set.SetNumber,
+            set.Theme,
+            set.Name,
+            set.Quantity,
+            set.SetListId,
+            ImageUrl = metadata?.ImageUrl,
+            PieceCount = metadata?.PieceCount,
+            Found = found
         });
     }
 
