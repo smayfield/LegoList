@@ -140,8 +140,8 @@ a {
 /* ---------- Buttons ---------- */
 
 .lb-btn {
-    --btn: var(--paper);
-    --btn-edge: var(--line);
+    --btn: var(--sun);
+    --btn-edge: var(--sun-edge);
     --btn-ink: var(--ink);
     display: inline-flex;
     align-items: center;
