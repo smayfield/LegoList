@@ -398,6 +398,110 @@ a {
     outline-color: var(--ink);
 }
 
+/* Select / rename controls on a list brick. */
+.brick__tools {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.6rem;
+    display: flex;
+    gap: 0.35rem;
+}
+
+.brick__tools .brick__delete {
+    position: static;
+}
+
+.brick__select {
+    position: absolute;
+    top: 0.6rem;
+    left: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.brick__select input {
+    width: 1.1rem;
+    height: 1.1rem;
+    cursor: pointer;
+}
+
+.brick__rename {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    min-height: 9rem;
+    padding: 1.5rem 1rem 1rem;
+}
+
+.brick__rename-label {
+    font-weight: 600;
+}
+
+.brick__rename-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* Export / merge toolbar above the lists. */
+.list-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 1.5rem;
+}
+
+.list-tools__status {
+    margin-right: auto;
+    color: var(--ink-soft);
+}
+
+.merge-panel {
+    max-width: 36rem;
+    margin-bottom: 2rem;
+    padding: 1rem 1.25rem 1.25rem;
+    background: var(--paper);
+    border: 2px solid var(--line);
+    border-radius: 12px;
+}
+
+.merge-panel h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1.25rem;
+}
+
+.merge-panel fieldset {
+    margin: 1rem 0;
+    padding: 0;
+    border: 0;
+}
+
+.merge-panel legend {
+    margin-bottom: 0.4rem;
+    font-weight: 600;
+}
+
+.merge-panel__choice {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.2rem 0;
+}
+
+.merge-panel__name {
+    margin-top: 0.4rem;
+}
+
+.merge-panel__actions {
+    display: flex;
+    gap: 0.6rem;
+}
+
 /* The empty slot where the next list goes. */
 .brick-slot {
     display: flex;

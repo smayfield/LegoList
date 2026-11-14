@@ -107,6 +107,27 @@ app.MapGet("/auth/logout", async (HttpContext ctx) =>
     return Results.Redirect("/");
 }).RequireAuthorization();
 
+// Downloads a CSV or PDF of the signed-in user's lists. The browser can't call the API itself
+// (it has no bearer token), so this fetches the file from the API and passes it on.
+app.MapGet("/export", async (HttpContext ctx, IHttpClientFactory clients, string? format, string? ids) =>
+{
+    var http = clients.CreateClient("LegoListApi");
+    var url = $"api/lists/export?format={Uri.EscapeDataString(format ?? "")}&ids={Uri.EscapeDataString(ids ?? "")}";
+    using var response = await http.GetAsync(url, ctx.RequestAborted);
+    if (!response.IsSuccessStatusCode)
+    {
+        var status = response.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.NotFound
+            ? (int)response.StatusCode
+            : StatusCodes.Status502BadGateway;
+        return Results.Text("Couldn't export your lists. Go back and try again.", statusCode: status);
+    }
+
+    var bytes = await response.Content.ReadAsByteArrayAsync(ctx.RequestAborted);
+    var disposition = response.Content.Headers.ContentDisposition;
+    var fileName = disposition?.FileNameStar ?? disposition?.FileName?.Trim('"') ?? "legolist-export";
+    return Results.File(bytes, response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream", fileName);
+}).RequireAuthorization();
+
 app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()

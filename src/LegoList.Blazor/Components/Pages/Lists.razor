@@ -43,6 +43,11 @@ else
         }
     </div>
 
+    @if (infoMessage is not null)
+    {
+        <div class="notice" role="status">@infoMessage</div>
+    }
+
     <div class="search-bar">
         <label class="lb-field">
             Search your sets
@@ -91,15 +96,93 @@ else
     }
     else
     {
+    @if (lists.Count > 0)
+    {
+        <div class="list-tools">
+            <span class="list-tools__status">@(selected.Count == 0 ? "Tick lists to export or merge them, or export everything." : $"{selected.Count} selected")</span>
+            <a class="lb-btn lb-btn--small" href="@ExportUrl("csv")" download data-enhance-nav="false">Export @(selected.Count == 0 ? "all" : "selected") as CSV</a>
+            <a class="lb-btn lb-btn--small" href="@ExportUrl("pdf")" download data-enhance-nav="false">Export @(selected.Count == 0 ? "all" : "selected") as PDF</a>
+            @if (selected.Count == 2)
+            {
+                <button class="lb-btn lb-btn--small lb-btn--blue" @onclick="OpenMerge">Merge the two selected…</button>
+            }
+            @if (selected.Count > 0)
+            {
+                <button class="lb-btn lb-btn--small" @onclick="ClearSelection">Clear selection</button>
+            }
+        </div>
+    }
+
+    @if (mergeOpen && SelectedPair() is { } pair)
+    {
+        <section class="merge-panel" aria-labelledby="merge-title">
+            <h2 id="merge-title">Merge “@pair.First.Name” and “@pair.Second.Name”</h2>
+            <p>All the sets end up in one list and the other list is removed. A set that is in both lists
+                appears once, with the quantities added together.</p>
+            <fieldset>
+                <legend>What should the merged list be called?</legend>
+                <label class="merge-panel__choice">
+                    <input type="radio" name="merge-name" checked="@(mergeChoice == MergeNameChoice.KeepFirst)"
+                           @onchange="@(() => mergeChoice = MergeNameChoice.KeepFirst)" />
+                    Keep “@pair.First.Name”
+                </label>
+                <label class="merge-panel__choice">
+                    <input type="radio" name="merge-name" checked="@(mergeChoice == MergeNameChoice.KeepSecond)"
+                           @onchange="@(() => mergeChoice = MergeNameChoice.KeepSecond)" />
+                    Keep “@pair.Second.Name”
+                </label>
+                <label class="merge-panel__choice">
+                    <input type="radio" name="merge-name" checked="@(mergeChoice == MergeNameChoice.NewName)"
+                           @onchange="@(() => mergeChoice = MergeNameChoice.NewName)" />
+                    A new name
+                </label>
+                @if (mergeChoice == MergeNameChoice.NewName)
+                {
+                    <input class="lb-input merge-panel__name" aria-label="New list name" maxlength="255"
+                           placeholder="e.g. Everything Star Wars" @bind="mergeNewName" @bind:event="oninput" />
+                }
+            </fieldset>
+            <div class="merge-panel__actions">
+                <button class="lb-btn lb-btn--red" @onclick="DoMerge"
+                        disabled="@(isMerging || (mergeChoice == MergeNameChoice.NewName && string.IsNullOrWhiteSpace(mergeNewName)))">
+                    @(isMerging ? "Merging…" : "Merge lists")
+                </button>
+                <button class="lb-btn" @onclick="CloseMerge" disabled="@isMerging">Cancel</button>
+            </div>
+        </section>
+    }
+
     <div class="brick-grid">
         @foreach (var list in lists)
         {
             <div class="brick brick--c@(list.Id % 10)">
-                <a class="brick__link" href="/lists/@list.Id">
-                    <span class="brick__name">@list.Name</span>
-                    <span class="brick__count">@(list.SetCount == 1 ? "1 set" : $"{list.SetCount} sets")</span>
-                </a>
-                <button class="brick__delete" aria-label="Delete @list.Name" @onclick="() => DeleteList(list.Id)">Delete</button>
+                @if (renamingId == list.Id)
+                {
+                    <form class="brick__rename" @onsubmit="SaveRename">
+                        <label class="brick__rename-label" for="rename-@list.Id">Rename this list</label>
+                        <input id="rename-@list.Id" class="lb-input" maxlength="255" @bind="renameText" @bind:event="oninput" />
+                        <div class="brick__rename-actions">
+                            <button type="submit" class="lb-btn lb-btn--small lb-btn--blue" disabled="@string.IsNullOrWhiteSpace(renameText)">Save</button>
+                            <button type="button" class="lb-btn lb-btn--small" @onclick="CancelRename">Cancel</button>
+                        </div>
+                    </form>
+                }
+                else
+                {
+                    <label class="brick__select">
+                        <input type="checkbox" aria-label="Select @list.Name" checked="@selected.Contains(list.Id)"
+                               @onchange="e => ToggleSelected(list.Id, e.Value is true)" />
+                        Select
+                    </label>
+                    <a class="brick__link" href="/lists/@list.Id">
+                        <span class="brick__name">@list.Name</span>
+                        <span class="brick__count">@(list.SetCount == 1 ? "1 set" : $"{list.SetCount} sets")</span>
+                    </a>
+                    <div class="brick__tools">
+                        <button class="brick__delete" aria-label="Rename @list.Name" @onclick="() => StartRename(list)">Rename</button>
+                        <button class="brick__delete" aria-label="Delete @list.Name" @onclick="() => DeleteList(list.Id)">Delete</button>
+                    </div>
+                }
             </div>
         }
 
@@ -125,6 +208,22 @@ else
     private string newListName = string.Empty;
     private string? errorMessage;
     private bool? signedIn;
+    private string? infoMessage;
+
+    // Selection (for export and merge)
+    private readonly HashSet<int> selected = [];
+
+    // Rename
+    private int? renamingId;
+    private string renameText = string.Empty;
+
+    // Merge
+    private enum MergeNameChoice { KeepFirst, KeepSecond, NewName }
+    private bool mergeOpen;
+    private bool isMerging;
+    private MergeNameChoice mergeChoice = MergeNameChoice.KeepFirst;
+    private string mergeNewName = string.Empty;
+
     private string searchText = string.Empty;
     private List<LegoSetDto>? searchResults;
     private int searchVersion;
@@ -196,12 +295,140 @@ else
         }
     }
 
+    private string ExportUrl(string format) =>
+        selected.Count == 0
+            ? $"/export?format={format}"
+            : $"/export?format={format}&ids={string.Join(',', selected.OrderBy(i => i))}";
+
+    private void ToggleSelected(int id, bool isSelected)
+    {
+        if (isSelected) selected.Add(id); else selected.Remove(id);
+        if (selected.Count != 2) mergeOpen = false;
+    }
+
+    private void ClearSelection()
+    {
+        selected.Clear();
+        mergeOpen = false;
+    }
+
+    private void StartRename(SetListDto list)
+    {
+        renamingId = list.Id;
+        renameText = list.Name;
+        errorMessage = null;
+        infoMessage = null;
+    }
+
+    private void CancelRename() => renamingId = null;
+
+    private async Task SaveRename()
+    {
+        if (renamingId is not int id || string.IsNullOrWhiteSpace(renameText)) return;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            var response = await http.PutAsJsonAsync($"api/lists/{id}", new { Name = renameText });
+            if (response.IsSuccessStatusCode)
+            {
+                renamingId = null;
+                errorMessage = null;
+                await LoadLists();
+            }
+            else
+            {
+                errorMessage = await ErrorTextAsync(response, "Failed to rename list");
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+    }
+
+    // The two selected lists, in the order they appear on the page.
+    private (SetListDto First, SetListDto Second)? SelectedPair()
+    {
+        if (lists is null || selected.Count != 2) return null;
+        var pair = lists.Where(l => selected.Contains(l.Id)).ToList();
+        return pair.Count == 2 ? (pair[0], pair[1]) : null;
+    }
+
+    private void OpenMerge()
+    {
+        mergeChoice = MergeNameChoice.KeepFirst;
+        mergeNewName = string.Empty;
+        errorMessage = null;
+        infoMessage = null;
+        mergeOpen = SelectedPair() is not null;
+    }
+
+    private void CloseMerge() => mergeOpen = false;
+
+    private async Task DoMerge()
+    {
+        if (SelectedPair() is not { } pair) return;
+        var (first, second) = pair;
+
+        // The surviving list is the one whose name is kept; with a new name either one will do.
+        var (keep, absorb) = mergeChoice == MergeNameChoice.KeepSecond ? (second, first) : (first, second);
+        var newName = mergeChoice == MergeNameChoice.NewName ? mergeNewName.Trim() : null;
+        if (mergeChoice == MergeNameChoice.NewName && string.IsNullOrEmpty(newName)) return;
+
+        isMerging = true;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            var response = await http.PostAsJsonAsync($"api/lists/{keep.Id}/merge", new { FromListId = absorb.Id, NewName = newName });
+            if (response.IsSuccessStatusCode)
+            {
+                var merged = await response.Content.ReadFromJsonAsync<SetListDto>();
+                infoMessage = $"Merged “{first.Name}” and “{second.Name}” into “{merged?.Name ?? newName ?? keep.Name}”.";
+                errorMessage = null;
+                selected.Clear();
+                mergeOpen = false;
+                await LoadLists();
+            }
+            else
+            {
+                errorMessage = await ErrorTextAsync(response, "Failed to merge lists");
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isMerging = false;
+        }
+    }
+
+    private static async Task<string> ErrorTextAsync(HttpResponseMessage response, string fallback)
+    {
+        if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+        {
+            try
+            {
+                var body = await response.Content.ReadFromJsonAsync<ApiError>();
+                if (!string.IsNullOrWhiteSpace(body?.Error)) return body.Error;
+            }
+            catch (Exception)
+            {
+                // fall through to the generic message
+            }
+        }
+        return $"{fallback}: {response.StatusCode}";
+    }
+
     private async Task DeleteList(int id)
     {
         try
         {
             var http = HttpClientFactory.CreateClient("LegoListApi");
             await http.DeleteAsync($"api/lists/{id}");
+            selected.Remove(id);
+            mergeOpen = false;
             await LoadLists();
         }
         catch (Exception ex)
