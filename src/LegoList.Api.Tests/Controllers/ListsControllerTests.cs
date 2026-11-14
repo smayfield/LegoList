@@ -57,6 +57,29 @@ public class ListsControllerTests
         Assert.Equal(expected, doc.RootElement.GetArrayLength());
     }
 
+    [Fact]
+    public async Task Search_ByTheme_MatchesTheWholeThemeOnly()
+    {
+        var (controller, db) = CreateControllerWithDb("sub-1");
+        var u1 = new User { GoogleSub = "sub-1", Email = "a@a.com", CreatedAt = DateTime.UtcNow };
+        db.Users.Add(u1);
+        await db.SaveChangesAsync();
+        var list = new SetList { Name = "Mine", UserId = u1.Id };
+        db.SetLists.Add(list);
+        await db.SaveChangesAsync();
+        db.LegoSets.AddRange(
+            new LegoSet { SetNumber = "1", Theme = "City", Name = "A", Quantity = 1, SetListId = list.Id },
+            new LegoSet { SetNumber = "2", Theme = "city", Name = "B", Quantity = 1, SetListId = list.Id },
+            new LegoSet { SetNumber = "3", Theme = "Space", Name = "Big City Rocket", Quantity = 1, SetListId = list.Id });
+        await db.SaveChangesAsync();
+
+        var result = await controller.Search(null, "City");
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var doc = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));
+        Assert.Equal(2, doc.RootElement.GetArrayLength());
+    }
+
     // ── Rename ───────────────────────────────────────────────────────────────
 
     private static async Task<(ListsController controller, LegoList.Data.LegoListDbContext db, User user)> ScaffoldUser(string sub = "sub-1")

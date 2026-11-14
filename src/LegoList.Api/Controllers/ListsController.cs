@@ -90,19 +90,23 @@ public class ListsController(LegoListDbContext db, UserService userService, ILog
     }
 
     [HttpGet("search")]
-    public async Task<IActionResult> Search([FromQuery] string? q)
+    public async Task<IActionResult> Search([FromQuery] string? q, [FromQuery] string? theme = null)
     {
         var user = await userService.GetOrCreateAsync(User);
         if (user is null) return Unauthorized();
 
+        // An exact theme (clicked from a search result) wins over the free-text term.
+        var exactTheme = theme?.Trim().ToLower();
         var term = q?.Trim().ToLower();
-        if (string.IsNullOrEmpty(term)) return Ok(Array.Empty<object>());
+        if (string.IsNullOrEmpty(exactTheme) && string.IsNullOrEmpty(term)) return Ok(Array.Empty<object>());
 
         var sets = await db.LegoSets
             .Where(s => s.SetList.UserId == user.Id
-                && (s.Name.ToLower().Contains(term)
-                    || s.SetNumber.ToLower().Contains(term)
-                    || s.Theme.ToLower().Contains(term)))
+                && (!string.IsNullOrEmpty(exactTheme)
+                    ? s.Theme.ToLower() == exactTheme
+                    : (s.Name.ToLower().Contains(term!)
+                        || s.SetNumber.ToLower().Contains(term!)
+                        || s.Theme.ToLower().Contains(term!))))
             .OrderBy(s => s.SetList.Name).ThenBy(s => s.Name)
             .Select(s => new
             {
