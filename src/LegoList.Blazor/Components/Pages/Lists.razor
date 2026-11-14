@@ -2,6 +2,8 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+@implements IDisposable
 @using LegoList.Blazor.Models
 
 <PageTitle>My lists</PageTitle>
@@ -56,8 +58,12 @@ else
         </label>
     </div>
 
-    @if (!string.IsNullOrWhiteSpace(searchText))
+    @if (!string.IsNullOrWhiteSpace(searchText) || themeSearch is not null)
     {
+        @if (themeSearch is not null)
+        {
+            <p class="page-head__summary">All your sets in the theme “@themeSearch”. <a href="/">Clear</a></p>
+        }
         @if (searchResults is null)
         {
             <p class="page-head__summary">Searching…</p>
@@ -72,7 +78,7 @@ else
             <div class="set-grid">
                 @foreach (var set in searchResults)
                 {
-                    <article class="set-card">
+                    <article class="set-card set-card--link">
                         <div class="set-card__picture">
                             @if (Uri.TryCreate(set.ImageUrl, UriKind.Absolute, out var img) && (img.Scheme == Uri.UriSchemeHttp || img.Scheme == Uri.UriSchemeHttps))
                             {
@@ -85,9 +91,19 @@ else
                             <span class="set-card__number">@set.SetNumber</span>
                         </div>
                         <div class="set-card__body">
-                            <span class="set-card__theme">@set.Theme</span>
-                            <h2 class="set-card__name">@set.Name</h2>
-                            <a href="/lists/@set.SetListId">In list: @set.ListName</a>
+                            @if (string.IsNullOrWhiteSpace(set.Theme))
+                            {
+                                <span class="set-card__theme">&nbsp;</span>
+                            }
+                            else
+                            {
+                                <a class="set-card__theme set-card__theme-link" href="/?theme=@Uri.EscapeDataString(set.Theme)"
+                                   title="Show all your sets in this theme">@set.Theme</a>
+                            }
+                            <h2 class="set-card__name">
+                                <a class="set-card__link" href="/lists/@set.SetListId/sets/@set.Id">@(string.IsNullOrWhiteSpace(set.Name) ? set.SetNumber : set.Name)</a>
+                            </h2>
+                            <a class="set-card__list-link" href="/lists/@set.SetListId">In list: @set.ListName</a>
                         </div>
                     </article>
                 }
@@ -223,20 +239,30 @@ else
     private int mergeKeepId;
     private string mergeNewName = string.Empty;
 
+    [SupplyParameterFromQuery(Name = "q")] public string? QueryText { get; set; }
+    [SupplyParameterFromQuery(Name = "theme")] public string? QueryTheme { get; set; }
+
     private string searchText = string.Empty;
+    private string? themeSearch;
+    private string? appliedQuery;
     private List<LegoSetDto>? searchResults;
     private int searchVersion;
 
     private async Task RunSearch()
     {
-        var term = searchText.Trim();
+        themeSearch = null;
+        await SearchAsync($"q={Uri.EscapeDataString(searchText.Trim())}", searchText.Trim().Length == 0);
+    }
+
+    private async Task SearchAsync(string queryString, bool empty)
+    {
         var version = ++searchVersion;
         searchResults = null;
-        if (term.Length == 0) return;
+        if (empty) return;
         try
         {
             var http = HttpClientFactory.CreateClient("LegoListApi");
-            var results = await http.GetFromJsonAsync<List<LegoSetDto>>($"api/lists/search?q={Uri.EscapeDataString(term)}");
+            var results = await http.GetFromJsonAsync<List<LegoSetDto>>($"api/lists/search?{queryString}");
             if (version == searchVersion) searchResults = results ?? [];
         }
         catch (Exception ex)
@@ -249,10 +275,53 @@ else
         }
     }
 
+    // The address decides what is shown: "/" is the plain lists page, "/?theme=X" lists every set in a theme.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (signedIn != true) return;
+        var theme = QueryTheme?.Trim();
+        var text = QueryText?.Trim();
+        var key = $"{theme}|{text}";
+        if (key == appliedQuery) return;
+        appliedQuery = key;
+
+        if (!string.IsNullOrEmpty(theme))
+        {
+            themeSearch = theme;
+            searchText = string.Empty;
+            await SearchAsync($"theme={Uri.EscapeDataString(theme)}", false);
+        }
+        else
+        {
+            themeSearch = null;
+            searchText = text ?? string.Empty;
+            await SearchAsync($"q={Uri.EscapeDataString(searchText)}", searchText.Length == 0);
+        }
+    }
+
+    // Clicking the logo (or any link back to "/") while already here should give the plain lists page again.
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        var uri = new Uri(e.Location);
+        if (uri.AbsolutePath != "/" || !string.IsNullOrEmpty(uri.Query)) return;
+        _ = InvokeAsync(() =>
+        {
+            searchText = string.Empty;
+            themeSearch = null;
+            searchResults = null;
+            searchVersion++;
+            appliedQuery = "|";
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+
     protected override async Task OnInitializedAsync()
     {
         var state = await AuthStateProvider.GetAuthenticationStateAsync();
         signedIn = state.User.Identity?.IsAuthenticated == true;
+        Nav.LocationChanged += OnLocationChanged;
         if (signedIn == true)
             await LoadLists();
     }

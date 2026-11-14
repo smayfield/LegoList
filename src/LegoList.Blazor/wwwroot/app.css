@@ -1022,3 +1022,35 @@ a {
     font-weight: 400;
     color: var(--ink-soft);
 }
+
+/* A whole search-result card is a link to the set's details; the theme and list links sit above it. */
+.set-card--link {
+    position: relative;
+}
+
+.set-card--link:hover,
+.set-card--link:focus-within {
+    border-color: var(--blue);
+}
+
+.set-card__link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.set-card__link::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+}
+
+.set-card__theme-link,
+.set-card__list-link {
+    position: relative;
+    z-index: 1;
+    align-self: flex-start;
+}
+
+.set-card__theme-link:hover {
+    text-decoration: underline;
+}
