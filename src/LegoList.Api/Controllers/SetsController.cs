@@ -40,7 +40,9 @@ public class SetsController(
 
         if (!fetched.Cacheable)
         {
-            logger.LogWarning("Rebrickable lookup for {SetNumber} failed; not caching so it is retried next time", setNumber);
+            // The set number comes from the user; strip line breaks so it can't forge log lines.
+            var logSafe = setNumber.Replace("\r", "").Replace("\n", "");
+            logger.LogWarning("Rebrickable lookup for {SetNumber} failed; not caching so it is retried next time", logSafe);
             var transient = cached ?? new SetMetadata
             {
                 SetNumber = setNumber,
