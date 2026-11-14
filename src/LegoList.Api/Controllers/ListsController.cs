@@ -244,7 +244,7 @@ public class ListsController(LegoListDbContext db, UserService userService, ILog
         db.SetLists.RemoveRange(emptied);
         await db.SaveChangesAsync();
 
-        logger.LogInformation("Merged lists {FromIds} into {IntoId} for user {UserId}", string.Join(',', fromIds), id, user.Id);
+        logger.LogInformation("Merged {Count} lists into {IntoId} for user {UserId}", emptied.Count, id, user.Id);
         var merged = await db.SetLists
             .Where(l => l.Id == id)
             .Select(l => new { l.Id, l.Name, SetCount = l.Sets.Count })
