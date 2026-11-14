@@ -7,6 +7,8 @@ WORKDIR /src
 COPY src/LegoList.Api/LegoList.Api.csproj LegoList.Api/
 RUN dotnet restore LegoList.Api/LegoList.Api.csproj -a $TARGETARCH
 COPY src/LegoList.Api/ LegoList.Api/
+# Linked into the API (see LegoList.Api.csproj) so exports share the list page's ordering.
+COPY src/LegoList.Blazor/Services/SetGrouping.cs LegoList.Blazor/Services/SetGrouping.cs
 RUN dotnet publish LegoList.Api/LegoList.Api.csproj -c Release -a $TARGETARCH --no-restore -o /app
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
