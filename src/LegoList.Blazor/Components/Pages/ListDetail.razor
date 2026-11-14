@@ -39,7 +39,7 @@ else
             Quantity
             <input class="lb-input lb-input--qty" type="number" min="1" @bind="newQuantity" disabled="@isAdding" />
         </label>
-        <button class="lb-btn lb-btn--red" @onclick="AddSet" disabled="@isAdding">
+        <button class="lb-btn lb-btn--green" @onclick="AddSet" disabled="@isAdding">
             @if (isAdding) { <span class="spinner" role="status"></span> <span>Looking up set…</span> }
             else { <span>Add set</span> }
         </button>
@@ -54,7 +54,7 @@ else
                       @bind="bulkText" @bind:event="oninput" disabled="@isBulkAdding"></textarea>
         </label>
         <div class="bulk-add__actions">
-            <button class="lb-btn lb-btn--red" @onclick="AddMany" disabled="@(isBulkAdding || string.IsNullOrWhiteSpace(bulkText))">
+            <button class="lb-btn lb-btn--green" @onclick="AddMany" disabled="@(isBulkAdding || string.IsNullOrWhiteSpace(bulkText))">
                 @if (isBulkAdding) { <span class="spinner" role="status"></span> <span>@bulkProgress</span> }
                 else { <span>Add these sets</span> }
             </button>
@@ -70,7 +70,7 @@ else
             {
                 <span class="spinner spinner--dark" role="status"></span>
                 <span>@bulkLookupProgress</span>
-                <button class="lb-btn lb-btn--small" @onclick="CancelLookUpMissing">Cancel</button>
+                <button class="lb-btn lb-btn--small lb-btn--red" @onclick="CancelLookUpMissing">Cancel</button>
             }
             else
             {
@@ -101,8 +101,37 @@ else
     }
     else
     {
+        var themes = SetGrouping.Themes(list.Sets, s => s.Theme);
+        @if (themes.Count > 1)
+        {
+            <div class="theme-filter" role="group" aria-label="Filter by theme">
+                <span class="theme-filter__label">Themes:</span>
+                @foreach (var (theme, count) in themes)
+                {
+                    var chosen = themeFilter.Contains(theme);
+                    <button type="button" class="theme-chip@(chosen ? " theme-chip--on" : "")" aria-pressed="@(chosen ? "true" : "false")"
+                            @onclick="() => ToggleTheme(theme)">@theme <span class="theme-chip__count">@count</span></button>
+                }
+                @if (themeFilter.Count > 0)
+                {
+                    <button type="button" class="lb-btn lb-btn--small" @onclick="ClearThemeFilter">Show all themes</button>
+                }
+            </div>
+        }
+        var groups = SetGrouping.Group(list.Sets, s => s.Theme, s => s.SetNumber, themeFilter);
+        @if (groups.Count == 0)
+        {
+            <div class="empty">
+                <strong>No sets in the chosen themes.</strong>
+                They may have been moved or deleted. Use “Show all themes” to see everything.
+            </div>
+        }
+        @foreach (var group in groups)
+        {
+        <section class="theme-group" aria-labelledby="theme-@GroupAnchor(group.Theme)">
+        <h2 class="theme-group__title" id="theme-@GroupAnchor(group.Theme)">@group.Theme <span class="theme-group__count">@group.Sets.Count</span></h2>
         <div class="set-grid">
-            @foreach (var set in list.Sets)
+            @foreach (var set in group.Sets)
             {
                 @if (editingSetId == set.Id)
                 {
@@ -126,7 +155,7 @@ else
                             </label>
                             <div class="set-card__actions">
                                 <button class="lb-btn lb-btn--small lb-btn--blue" @onclick="SaveEdit">Save changes</button>
-                                <button class="lb-btn lb-btn--small" @onclick="CancelEdit">Cancel</button>
+                                <button class="lb-btn lb-btn--small lb-btn--red" @onclick="CancelEdit">Cancel</button>
                             </div>
                         </div>
                     </article>
@@ -200,7 +229,7 @@ else
                                         <button class="lb-btn lb-btn--small lb-btn--blue" disabled="@(moveTargetId == 0 || isMoving)" @onclick="MoveSet">
                                             @(isMoving ? "Moving…" : "Move")
                                         </button>
-                                        <button class="lb-btn lb-btn--small" disabled="@isMoving" @onclick="CancelMove">Cancel</button>
+                                        <button class="lb-btn lb-btn--small lb-btn--red" disabled="@isMoving" @onclick="CancelMove">Cancel</button>
                                     }
                                 }
                                 else
@@ -223,6 +252,8 @@ else
                 }
             }
         </div>
+        </section>
+        }
     }
 
     <ImageLightbox Url="@lightboxUrl" Alt="@lightboxAlt" OnClose="CloseImage" />
@@ -262,6 +293,9 @@ else
     private readonly HashSet<int> notFoundSetIds = [];
     private bool disposed;
 
+    // Themes the view is limited to (empty = show every theme)
+    private readonly HashSet<string> themeFilter = new(StringComparer.OrdinalIgnoreCase);
+
     // Picture viewer state
     private string? lightboxUrl;
     private string? lightboxAlt;
@@ -278,6 +312,16 @@ else
         await LoadList();
     }
 
+    private void ToggleTheme(string theme)
+    {
+        if (!themeFilter.Remove(theme)) themeFilter.Add(theme);
+    }
+
+    private void ClearThemeFilter() => themeFilter.Clear();
+
+    private static string GroupAnchor(string theme) =>
+        System.Text.RegularExpressions.Regex.Replace(theme.ToLowerInvariant(), "[^a-z0-9]+", "-").Trim('-');
+
     private string Summary()
     {
         var sets = list!.Sets.Sum(s => s.Quantity);
@@ -292,6 +336,11 @@ else
         {
             var http = HttpClientFactory.CreateClient("LegoListApi");
             list = await http.GetFromJsonAsync<SetListDto>($"api/lists/{Id}");
+            if (list is not null)
+            {
+                var present = SetGrouping.Themes(list.Sets, s => s.Theme).Select(t => t.Theme).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                themeFilter.RemoveWhere(t => !present.Contains(t));
+            }
         }
         catch (Exception ex)
         {
