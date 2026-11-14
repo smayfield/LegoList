@@ -182,6 +182,68 @@ public class SetsControllerTests
     }
 
     [Fact]
+    public async Task Create_DoesNotCacheMetadata_WhenRebrickableIsRateLimited()
+    {
+        var rebrickable = CreateRebrickable(_ => new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+        var (controller, db, _, list) = Scaffold(rebrickable: rebrickable);
+
+        var result = await controller.Create(list.Id, new CreateSetRequest("75192", 1));
+
+        Assert.IsType<CreatedAtActionResult>(result);
+        Assert.Equal(1, db.LegoSets.Count());   // the set is still added
+        Assert.Empty(db.SetMetadatas);          // but the failure isn't remembered
+    }
+
+    [Fact]
+    public async Task Create_RetriesLookup_AfterEarlierFailureWasNotCached()
+    {
+        var fail = true;
+        var rebrickable = CreateRebrickable(_ => fail
+            ? new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+            : Json("{\"name\":\"Falcon\",\"theme_id\":null,\"set_img_url\":null,\"num_parts\":7541}"));
+        var (controller, db, _, list) = Scaffold(rebrickable: rebrickable);
+
+        await controller.Create(list.Id, new CreateSetRequest("75192", 1));
+        fail = false;
+        await controller.Create(list.Id, new CreateSetRequest("75192", 1));
+
+        var cached = Assert.Single(db.SetMetadatas);
+        Assert.Equal("Falcon", cached.Name);
+        Assert.Equal(7541, cached.PieceCount);
+    }
+
+    [Fact]
+    public async Task Create_RefetchesStaleEmptyMetadata_AndFillsItIn()
+    {
+        var rebrickable = CreateRebrickable(_ => Json(
+            "{\"name\":\"Falcon\",\"theme_id\":null,\"set_img_url\":\"https://img.com/f.jpg\",\"num_parts\":7541}"));
+        var (controller, db, _, list) = Scaffold(rebrickable: rebrickable);
+        db.SetMetadatas.Add(new SetMetadata { SetNumber = "75192", FetchedAt = DateTime.UtcNow.AddHours(-2) });
+        await db.SaveChangesAsync();
+
+        await controller.Create(list.Id, new CreateSetRequest("75192", 1));
+
+        var cached = Assert.Single(db.SetMetadatas);
+        Assert.Equal("Falcon", cached.Name);
+        Assert.Equal("https://img.com/f.jpg", cached.ImageUrl);
+        Assert.Equal("Falcon", db.LegoSets.Single().Name);
+    }
+
+    [Fact]
+    public async Task Create_DoesNotRefetch_RecentEmptyMetadata()
+    {
+        var calls = 0;
+        var rebrickable = CreateRebrickable(_ => { calls++; return Json("{\"name\":\"Falcon\"}"); });
+        var (controller, db, _, list) = Scaffold(rebrickable: rebrickable);
+        db.SetMetadatas.Add(new SetMetadata { SetNumber = "99999", FetchedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        await controller.Create(list.Id, new CreateSetRequest("99999", 1));
+
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
     public async Task Create_ReturnsCreated_WithCorrectSetNumber()
     {
         var (controller, db, _, list) = Scaffold();
@@ -192,6 +254,128 @@ public class SetsControllerTests
         var legoSet = db.LegoSets.Single();
         Assert.Equal("42083", legoSet.SetNumber);
         Assert.Equal(3, legoSet.Quantity);
+    }
+
+    [Fact]
+    public async Task Create_ReportsLookupFailed_WhenRebrickableIsRateLimited()
+    {
+        var rebrickable = CreateRebrickable(_ => new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+        var (controller, _, _, list) = Scaffold(rebrickable: rebrickable);
+
+        var result = await controller.Create(list.Id, new CreateSetRequest("75192", 1));
+
+        var created = Assert.IsType<CreatedAtActionResult>(result);
+        var doc = JsonDocument.Parse(JsonSerializer.Serialize(created.Value));
+        Assert.True(doc.RootElement.GetProperty("LookupFailed").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Create_ReportsLookupSucceeded_WhenRebrickableAnswers()
+    {
+        var (controller, _, _, list) = Scaffold(); // 404 is a definitive answer
+
+        var result = await controller.Create(list.Id, new CreateSetRequest("99999", 1));
+
+        var created = Assert.IsType<CreatedAtActionResult>(result);
+        var doc = JsonDocument.Parse(JsonSerializer.Serialize(created.Value));
+        Assert.False(doc.RootElement.GetProperty("LookupFailed").GetBoolean());
+    }
+
+    // ── Refresh ──────────────────────────────────────────────────────────────
+
+    private static async Task<LegoSet> AddBareSet(LegoListDbContext db, SetList list, string number = "75192")
+    {
+        var set = new LegoSet { SetListId = list.Id, SetNumber = number, Name = string.Empty, Theme = string.Empty, Quantity = 1 };
+        db.LegoSets.Add(set);
+        await db.SaveChangesAsync();
+        return set;
+    }
+
+    [Fact]
+    public async Task Refresh_ReturnsNotFound_WhenListNotOwned()
+    {
+        var (controller, db, _, list) = Scaffold();
+        var set = await AddBareSet(db, list);
+
+        var result = await controller.Refresh(999, set.Id);
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task Refresh_ReturnsNotFound_WhenSetMissing()
+    {
+        var (controller, _, _, list) = Scaffold();
+
+        var result = await controller.Refresh(list.Id, 12345);
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task Refresh_FillsInDetails_AndCachesThem()
+    {
+        var rebrickable = CreateRebrickable(req => req.RequestUri!.ToString().Contains("/themes/")
+            ? Json("{\"name\":\"Star Wars\"}")
+            : Json("{\"name\":\"Falcon\",\"theme_id\":158,\"set_img_url\":\"https://img.com/f.jpg\",\"num_parts\":7541}"));
+        var (controller, db, _, list) = Scaffold(rebrickable: rebrickable);
+        var set = await AddBareSet(db, list);
+
+        var result = await controller.Refresh(list.Id, set.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var doc = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));
+        Assert.Equal("Falcon", doc.RootElement.GetProperty("Name").GetString());
+        Assert.Equal(7541, doc.RootElement.GetProperty("PieceCount").GetInt32());
+        Assert.True(doc.RootElement.GetProperty("Found").GetBoolean());
+        var saved = db.LegoSets.Single();
+        Assert.Equal("Falcon", saved.Name);
+        Assert.Equal("Star Wars", saved.Theme);
+        Assert.Equal("Falcon", db.SetMetadatas.Single().Name);
+    }
+
+    [Fact]
+    public async Task Refresh_IgnoresTheCache_AndUpdatesAnEmptyRow()
+    {
+        var rebrickable = CreateRebrickable(_ => Json("{\"name\":\"Falcon\",\"theme_id\":null,\"num_parts\":7541}"));
+        var (controller, db, _, list) = Scaffold(rebrickable: rebrickable);
+        db.SetMetadatas.Add(new SetMetadata { SetNumber = "75192", FetchedAt = DateTime.UtcNow }); // fresh but empty
+        var set = await AddBareSet(db, list);
+
+        await controller.Refresh(list.Id, set.Id);
+
+        Assert.Equal(7541, db.SetMetadatas.Single().PieceCount);
+        Assert.Equal("Falcon", db.LegoSets.Single().Name);
+    }
+
+    [Fact]
+    public async Task Refresh_Returns503_WhenRebrickableIsRateLimited()
+    {
+        var rebrickable = CreateRebrickable(_ => new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+        var (controller, db, _, list) = Scaffold(rebrickable: rebrickable);
+        var set = await AddBareSet(db, list);
+
+        var result = await controller.Refresh(list.Id, set.Id);
+
+        var status = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(503, status.StatusCode);
+        Assert.Empty(db.SetMetadatas);
+    }
+
+    [Fact]
+    public async Task Refresh_KeepsUserEditedName_WhenRebrickableDoesNotKnowTheSet()
+    {
+        var (controller, db, _, list) = Scaffold(); // 404
+        var set = await AddBareSet(db, list, "99999");
+        set.Name = "My custom MOC";
+        await db.SaveChangesAsync();
+
+        var result = await controller.Refresh(list.Id, set.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var doc = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));
+        Assert.False(doc.RootElement.GetProperty("Found").GetBoolean());
+        Assert.Equal("My custom MOC", db.LegoSets.Single().Name);
     }
 
     // ── Update ───────────────────────────────────────────────────────────────
