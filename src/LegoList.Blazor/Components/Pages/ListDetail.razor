@@ -1,6 +1,7 @@
 @page "/lists/{Id:int}"
 @rendermode InteractiveServer
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@implements IDisposable
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using LegoList.Blazor.Models
@@ -61,6 +62,26 @@ else
         </div>
     </details>
 
+    var missingCount = MissingDetails().Count;
+    @if (missingCount > 0 || isBulkLooking)
+    {
+        <div class="lookup-bar">
+            @if (isBulkLooking)
+            {
+                <span class="spinner spinner--dark" role="status"></span>
+                <span>@bulkLookupProgress</span>
+                <button class="lb-btn lb-btn--small" @onclick="CancelLookUpMissing">Cancel</button>
+            }
+            else
+            {
+                <button class="lb-btn" disabled="@(refreshingSetId is not null)" @onclick="LookUpMissing">
+                    Look up missing details (@missingCount)
+                </button>
+                <span class="add-hint">Fetches the name, theme, picture and piece count from Rebrickable, one set at a time to stay under its rate limit.</span>
+            }
+        </div>
+    }
+
     @if (infoMessage is not null)
     {
         <div class="notice mb-4" role="status">@infoMessage</div>
@@ -114,11 +135,13 @@ else
                 {
                     <article class="set-card">
                         <div class="set-card__picture">
-                            @if (TryGetSafeHttpUrl(set.ImageUrl, out var imageUrl))
+                            @if (SetImage.TryGetSafeHttpUrl(set.ImageUrl, out var imageUrl))
                             {
-                                <a class="set-card__zoom" href="@imageUrl" target="_blank" rel="noopener noreferrer" title="Open full-size picture">
-                                    <img src="@imageUrl" alt="@GetSetImageAlt(set)" loading="lazy" />
-                                </a>
+                                <button type="button" class="set-card__zoom" title="Enlarge picture"
+                                        aria-label="Enlarge picture of @SetImage.GetAlt(set)"
+                                        @onclick="() => OpenImage(imageUrl, SetImage.GetAlt(set))">
+                                    <img src="@imageUrl" alt="@SetImage.GetAlt(set)" loading="lazy" />
+                                </button>
                             }
                             else
                             {
@@ -136,6 +159,19 @@ else
                             @if (set.PieceCount is int pieces)
                             {
                                 <span class="set-card__pieces">@pieces.ToString("N0") pieces</span>
+                            }
+                            @if (set.Built || !string.IsNullOrWhiteSpace(set.DisplayLocation))
+                            {
+                                <div class="set-card__badges">
+                                    @if (set.Built)
+                                    {
+                                        <span class="badge badge--built">Built</span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(set.DisplayLocation))
+                                    {
+                                        <span class="badge" title="Display location">@set.DisplayLocation</span>
+                                    }
+                                </div>
                             }
                             <div class="set-card__actions">
                                 @if (movingSetId == set.Id)
@@ -172,10 +208,11 @@ else
                                     @if (set.ImageUrl is null)
                                     {
                                         <button class="lb-btn lb-btn--small" aria-label="Look up details for @set.SetNumber" title="Fetch the name, theme, picture and piece count from Rebrickable"
-                                                disabled="@(refreshingSetId == set.Id)" @onclick="() => RefreshSet(set.Id)">
+                                                disabled="@(refreshingSetId == set.Id || isBulkLooking)" @onclick="() => RefreshSet(set.Id)">
                                             @(refreshingSetId == set.Id ? "Looking up…" : "Look up details")
                                         </button>
                                     }
+                                    <a class="lb-btn lb-btn--small" href="/lists/@Id/sets/@set.Id" aria-label="Details for @(string.IsNullOrWhiteSpace(set.Name) ? set.SetNumber : set.Name)">Details</a>
                                     <button class="lb-btn lb-btn--small lb-btn--blue" aria-label="Edit @set.Name" @onclick="() => StartEdit(set)">Edit</button>
                                     <button class="lb-btn lb-btn--small lb-btn--danger" aria-label="Delete @set.Name" @onclick="() => DeleteSet(set.Id)">Delete</button>
                                     <button class="lb-btn lb-btn--small" aria-label="Move @set.Name to another list" @onclick="() => StartMove(set)">Move</button>
@@ -187,6 +224,8 @@ else
             }
         </div>
     }
+
+    <ImageLightbox Url="@lightboxUrl" Alt="@lightboxAlt" OnClose="CloseImage" />
 }
 
 @code {
@@ -214,6 +253,18 @@ else
 
     // Refresh state
     private int? refreshingSetId;
+
+    // Bulk "look up missing details" state
+    private bool isBulkLooking;
+    private string? bulkLookupProgress;
+    private CancellationTokenSource? lookupCts;
+    // Sets Rebrickable has no record of: don't count them as "missing" again or queue them every run.
+    private readonly HashSet<int> notFoundSetIds = [];
+    private bool disposed;
+
+    // Picture viewer state
+    private string? lightboxUrl;
+    private string? lightboxAlt;
 
     // Edit state
     private int? editingSetId;
@@ -417,6 +468,14 @@ else
         }
     }
 
+    private void OpenImage(string url, string alt)
+    {
+        lightboxUrl = url;
+        lightboxAlt = alt;
+    }
+
+    private void CloseImage() => lightboxUrl = null;
+
     private async Task RefreshSet(int setId)
     {
         refreshingSetId = setId;
@@ -424,32 +483,119 @@ else
         infoMessage = null;
         try
         {
-            var http = HttpClientFactory.CreateClient("LegoListApi");
-            var response = await http.PostAsync($"api/lists/{Id}/sets/{setId}/refresh", content: null);
-            if (response.IsSuccessStatusCode)
-            {
-                var refreshed = await response.Content.ReadFromJsonAsync<LegoSetDto>();
-                if (refreshed?.Found == false)
-                    infoMessage = $"Rebrickable has no record of set {refreshed.SetNumber}. You can still edit its name and theme yourself.";
-                await LoadList();
-            }
-            else if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
-            {
+            var outcome = await RefreshOne(setId, CancellationToken.None);
+            var setNumber = list?.Sets.FirstOrDefault(s => s.Id == setId)?.SetNumber;
+            if (outcome == LookupOutcome.NotFound)
+                infoMessage = $"Rebrickable has no record of set {setNumber}. You can still edit its name and theme yourself.";
+            else if (outcome == LookupOutcome.Failed)
                 errorMessage = "Rebrickable couldn't be reached right now (it may be rate limiting). Try again in a minute.";
-            }
-            else
-            {
-                errorMessage = $"Failed to look up details: {response.StatusCode}";
-            }
-        }
-        catch (Exception ex)
-        {
-            errorMessage = $"Error: {ex.Message}";
         }
         finally
         {
             refreshingSetId = null;
         }
+    }
+
+    /// <summary>
+    /// Asks the API to look one set up on Rebrickable and, on success, updates the set on screen in place
+    /// (so a long bulk run doesn't reload the whole list for every set).
+    /// </summary>
+    private async Task<LookupOutcome> RefreshOne(int setId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            var response = await http.PostAsync($"api/lists/{Id}/sets/{setId}/refresh", content: null, cancellationToken);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                // The set was deleted or moved meanwhile; nothing to look up.
+                return LookupOutcome.NotFound;
+            }
+            if (!response.IsSuccessStatusCode)
+                return LookupOutcome.Failed;
+
+            var refreshed = await response.Content.ReadFromJsonAsync<LegoSetDto>(cancellationToken);
+            var set = list?.Sets.FirstOrDefault(s => s.Id == setId);
+            if (set is not null && refreshed is not null)
+            {
+                set.Name = refreshed.Name;
+                set.Theme = refreshed.Theme;
+                set.ImageUrl = refreshed.ImageUrl;
+                set.PieceCount = refreshed.PieceCount;
+            }
+            if (refreshed?.Found == false)
+            {
+                notFoundSetIds.Add(setId);
+                return LookupOutcome.NotFound;
+            }
+            notFoundSetIds.Remove(setId);
+            return LookupOutcome.Updated;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return LookupOutcome.Failed;
+        }
+    }
+
+    private List<int> MissingDetails() =>
+        list?.Sets.Where(s => s.ImageUrl is null && !notFoundSetIds.Contains(s.Id)).Select(s => s.Id).ToList() ?? [];
+
+    private async Task LookUpMissing()
+    {
+        if (isBulkLooking) return;
+        var ids = MissingDetails();
+        if (ids.Count == 0) return;
+
+        errorMessage = null;
+        infoMessage = null;
+        isBulkLooking = true;
+        lookupCts = new CancellationTokenSource();
+        BulkLookupResult? result = null;
+        try
+        {
+            // The API spaces its Rebrickable calls to stay under the rate limit; the runner just goes one at a time.
+            result = await new BulkLookupRunner().RunAsync(
+                ids,
+                RefreshOne,
+                (position, total, setId) =>
+                {
+                    var number = list?.Sets.FirstOrDefault(s => s.Id == setId)?.SetNumber;
+                    bulkLookupProgress = $"Looking up {position} of {total} ({number})…";
+                    StateHasChanged();
+                },
+                lookupCts.Token);
+        }
+        finally
+        {
+            lookupCts.Dispose();
+            lookupCts = null;
+            isBulkLooking = false;
+            bulkLookupProgress = null;
+        }
+
+        if (disposed || result is null) return;
+
+        var parts = new List<string>();
+        parts.Add(result.Updated == 1 ? "Looked up details for 1 set." : $"Looked up details for {result.Updated} sets.");
+        if (result.NotFound > 0)
+            parts.Add($"{result.NotFound} {(result.NotFound == 1 ? "isn't" : "aren't")} on Rebrickable; you can edit {(result.NotFound == 1 ? "its" : "their")} name and theme yourself.");
+        if (result.StoppedByFailures)
+            parts.Add($"Stopped with {result.Remaining} still to do because Rebrickable isn't responding (it may be rate limiting). Try again in a minute.");
+        else if (result.Cancelled)
+            parts.Add($"Cancelled with {result.Remaining} still to do.");
+        infoMessage = string.Join(" ", parts);
+    }
+
+    private void CancelLookUpMissing() => lookupCts?.Cancel();
+
+    public void Dispose()
+    {
+        disposed = true;
+        lookupCts?.Cancel();
     }
 
     private void StartEdit(LegoSetDto set)
@@ -505,32 +651,5 @@ else
         {
             errorMessage = $"Error: {ex.Message}";
         }
-    }
-
-    private static bool TryGetSafeHttpUrl(string? value, out string safeUrl)
-    {
-        safeUrl = string.Empty;
-        if (string.IsNullOrWhiteSpace(value))
-            return false;
-
-        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
-            return false;
-
-        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
-            return false;
-
-        safeUrl = uri.ToString();
-        return true;
-    }
-
-    private static string GetSetImageAlt(LegoSetDto set)
-    {
-        if (!string.IsNullOrWhiteSpace(set.Name))
-            return set.Name;
-
-        if (!string.IsNullOrWhiteSpace(set.SetNumber))
-            return $"Image of LEGO set {set.SetNumber}";
-
-        return "LEGO set image";
     }
 }

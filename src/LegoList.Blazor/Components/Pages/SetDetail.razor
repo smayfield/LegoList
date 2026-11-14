@@ -1,0 +1,186 @@
+@page "/lists/{ListId:int}/sets/{Id:int}"
+@rendermode InteractiveServer
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@using LegoList.Blazor.Models
+@using LegoList.Blazor.Services
+
+<PageTitle>@(set is null ? "Set" : (string.IsNullOrWhiteSpace(set.Name) ? set.SetNumber : set.Name))</PageTitle>
+
+@if (set is null && errorMessage is not null)
+{
+    <a class="back-link" href="/lists/@ListId">‹ Back to list</a>
+    <div class="notice" role="alert">@errorMessage</div>
+}
+else if (set is null)
+{
+    <p class="page-head__summary">Loading this set…</p>
+}
+else
+{
+    <div class="page-head">
+        <a class="back-link" href="/lists/@ListId">‹ Back to list</a>
+        <h1>@(string.IsNullOrWhiteSpace(set.Name) ? set.SetNumber : set.Name)</h1>
+        <p class="page-head__summary">
+            Set @set.SetNumber@(string.IsNullOrWhiteSpace(set.Theme) ? "" : $" · {set.Theme}")@(set.PieceCount is int pieces ? $" · {pieces:N0} pieces" : "")
+        </p>
+    </div>
+
+    <div class="set-detail">
+        <div class="set-detail__picture">
+            @if (SetImage.TryGetSafeHttpUrl(set.ImageUrl, out var imageUrl))
+            {
+                <button type="button" class="set-card__zoom" aria-label="Enlarge picture of @SetImage.GetAlt(set)"
+                        @onclick="() => OpenImage(imageUrl)">
+                    <img src="@imageUrl" alt="@SetImage.GetAlt(set)" />
+                </button>
+            }
+            else
+            {
+                <span>No picture</span>
+            }
+        </div>
+
+        <form class="set-detail__form" @onsubmit="Save">
+            <label class="lb-field">
+                Quantity
+                <input class="lb-input lb-input--qty" type="number" min="1" @bind="quantity" />
+            </label>
+
+            <label class="set-detail__check">
+                <input type="checkbox" @bind="built" />
+                Built yet
+            </label>
+
+            <label class="lb-field">
+                Display location
+                <input class="lb-input" maxlength="255" @bind="displayLocation" placeholder="e.g. Living room shelf" />
+            </label>
+
+            <label class="lb-field">
+                Purchase price
+                <input class="lb-input lb-input--qty" type="number" min="0" step="0.01" @bind="purchasePrice" />
+            </label>
+
+            <label class="lb-field">
+                Notes
+                <textarea class="lb-input" rows="6" maxlength="4000" @bind="notes"
+                          placeholder="Anything worth remembering: missing pieces, where you got it, gift from…"></textarea>
+            </label>
+
+            @if (infoMessage is not null)
+            {
+                <div class="notice" role="status">@infoMessage</div>
+            }
+            @if (errorMessage is not null)
+            {
+                <div class="notice" role="alert">@errorMessage</div>
+            }
+
+            <div class="set-detail__actions">
+                <button class="lb-btn lb-btn--blue" type="submit" disabled="@isSaving">@(isSaving ? "Saving…" : "Save details")</button>
+                <a class="lb-btn" href="/lists/@ListId">Back to list</a>
+            </div>
+        </form>
+    </div>
+
+    <ImageLightbox Url="@lightboxUrl" Alt="@SetImage.GetAlt(set)" OnClose="CloseImage" />
+}
+
+@code {
+    [Parameter] public int ListId { get; set; }
+    [Parameter] public int Id { get; set; }
+
+    private LegoSetDto? set;
+    private string? errorMessage;
+    private string? infoMessage;
+    private bool isSaving;
+    private string? lightboxUrl;
+
+    private int quantity = 1;
+    private bool built;
+    private string? displayLocation;
+    private decimal? purchasePrice;
+    private string? notes;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            var response = await http.GetAsync($"api/lists/{ListId}/sets/{Id}");
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                errorMessage = "That set doesn't exist (it may have been deleted or moved to another list).";
+                return;
+            }
+            response.EnsureSuccessStatusCode();
+
+            set = await response.Content.ReadFromJsonAsync<LegoSetDto>();
+            if (set is null)
+            {
+                errorMessage = "Failed to load set.";
+                return;
+            }
+            quantity = set.Quantity;
+            built = set.Built;
+            displayLocation = set.DisplayLocation;
+            purchasePrice = set.PurchasePrice;
+            notes = set.Notes;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to load set: {ex.Message}";
+        }
+    }
+
+    private void OpenImage(string url) => lightboxUrl = url;
+
+    private void CloseImage() => lightboxUrl = null;
+
+    private async Task Save()
+    {
+        isSaving = true;
+        errorMessage = null;
+        infoMessage = null;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            var response = await http.PutAsJsonAsync($"api/lists/{ListId}/sets/{Id}/details", new
+            {
+                Quantity = quantity,
+                Built = built,
+                DisplayLocation = displayLocation,
+                PurchasePrice = purchasePrice,
+                Notes = notes
+            });
+            if (response.IsSuccessStatusCode)
+            {
+                infoMessage = "Saved.";
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+            {
+                var problem = await response.Content.ReadFromJsonAsync<ApiError>();
+                errorMessage = problem?.Error ?? "Those details couldn't be saved.";
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                errorMessage = "That set no longer exists. Go back to the list and reload.";
+            }
+            else
+            {
+                errorMessage = $"Failed to save: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private sealed record ApiError(string? Error);
+}

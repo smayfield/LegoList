@@ -56,6 +56,10 @@ public class LegoListDbContext(DbContextOptions<LegoListDbContext> options) : Db
             e.Property(x => x.Theme).HasColumnName("theme");
             e.Property(x => x.Name).HasColumnName("name");
             e.Property(x => x.Quantity).HasColumnName("quantity");
+            e.Property(x => x.Built).HasColumnName("built");
+            e.Property(x => x.DisplayLocation).HasColumnName("display_location");
+            e.Property(x => x.PurchasePrice).HasColumnName("purchase_price");
+            e.Property(x => x.Notes).HasColumnName("notes");
             e.Property(x => x.SetListId).HasColumnName("set_list_id");
             e.HasOne(s => s.SetMetadata)
                 .WithMany()

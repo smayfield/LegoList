@@ -8,6 +8,10 @@ public class LegoSetDto
     public string Name { get; set; } = string.Empty;
     public int Quantity { get; set; }
     public int SetListId { get; set; }
+    public bool Built { get; set; }
+    public string? DisplayLocation { get; set; }
+    public decimal? PurchasePrice { get; set; }
+    public string? Notes { get; set; }
     public string? ImageUrl { get; set; }
     public string? TargetListName { get; set; }
     public bool CombinedWithExisting { get; set; }
