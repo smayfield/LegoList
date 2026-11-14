@@ -189,9 +189,9 @@ public class ListsController(LegoListDbContext db, UserService userService, ILog
     }
 
     /// <summary>
-    /// Merges list <c>request.FromListId</c> into list <c>id</c>: its sets move over (a set the target
-    /// already has gets its quantity added instead of appearing twice), then the source list is deleted.
-    /// The surviving list keeps its name unless <c>NewName</c> is given.
+    /// Merges the lists in <c>request.FromListIds</c> into list <c>id</c>: their sets move over (a set the
+    /// target already has gets its quantity added instead of appearing twice), then the source lists are
+    /// deleted. The surviving list keeps its name unless <c>NewName</c> is given.
     /// </summary>
     [HttpPost("{id}/merge")]
     public async Task<IActionResult> Merge(int id, [FromBody] MergeListsRequest request)
@@ -199,7 +199,9 @@ public class ListsController(LegoListDbContext db, UserService userService, ILog
         var user = await userService.GetOrCreateAsync(User);
         if (user is null) return Unauthorized();
 
-        if (request.FromListId == id) return BadRequest(new { Error = "Pick two different lists to merge." });
+        var fromIds = (request.FromListIds ?? []).Distinct().ToList();
+        if (fromIds.Count == 0) return BadRequest(new { Error = "Pick at least two lists to merge." });
+        if (fromIds.Contains(id)) return BadRequest(new { Error = "A list can't be merged into itself." });
 
         var newName = request.NewName?.Trim();
         if (request.NewName is not null)
@@ -209,35 +211,40 @@ public class ListsController(LegoListDbContext db, UserService userService, ILog
         }
 
         var target = await db.SetLists.FirstOrDefaultAsync(l => l.Id == id && l.UserId == user.Id);
-        var source = await db.SetLists.FirstOrDefaultAsync(l => l.Id == request.FromListId && l.UserId == user.Id);
-        if (target is null || source is null) return NotFound();
+        if (target is null) return NotFound();
+        var sources = await db.SetLists.Where(l => fromIds.Contains(l.Id) && l.UserId == user.Id).ToListAsync();
+        if (sources.Count != fromIds.Count) return NotFound();
 
         var targetSets = await db.LegoSets.Where(s => s.SetListId == target.Id).ToListAsync();
-        var sourceSets = await db.LegoSets.Where(s => s.SetListId == source.Id).ToListAsync();
-        foreach (var set in sourceSets)
+        // Process the sources in the order they were requested so quantities/details combine predictably.
+        foreach (var source in fromIds.Select(fid => sources.First(l => l.Id == fid)))
         {
-            var existing = targetSets.FirstOrDefault(t => t.SetNumber == set.SetNumber);
-            if (existing is not null)
+            var sourceSets = await db.LegoSets.Where(s => s.SetListId == source.Id).ToListAsync();
+            foreach (var set in sourceSets)
             {
-                existing.Absorb(set);
-                db.LegoSets.Remove(set);
-            }
-            else
-            {
-                set.SetListId = target.Id;
-                targetSets.Add(set);
+                var existing = targetSets.FirstOrDefault(t => t.SetNumber == set.SetNumber);
+                if (existing is not null)
+                {
+                    existing.Absorb(set);
+                    db.LegoSets.Remove(set);
+                }
+                else
+                {
+                    set.SetListId = target.Id;
+                    targetSets.Add(set);
+                }
             }
         }
         if (newName is not null) target.Name = newName;
         await db.SaveChangesAsync();
 
-        // The source list is empty now. Reload so the deleted list no longer has any sets attached.
+        // The source lists are empty now. Reload so the deleted lists no longer have any sets attached.
         db.ChangeTracker.Clear();
-        var emptied = await db.SetLists.FirstAsync(l => l.Id == request.FromListId);
-        db.SetLists.Remove(emptied);
+        var emptied = await db.SetLists.Where(l => fromIds.Contains(l.Id)).ToListAsync();
+        db.SetLists.RemoveRange(emptied);
         await db.SaveChangesAsync();
 
-        logger.LogInformation("Merged list {FromId} into {IntoId} for user {UserId}", request.FromListId, id, user.Id);
+        logger.LogInformation("Merged lists {FromIds} into {IntoId} for user {UserId}", string.Join(',', fromIds), id, user.Id);
         var merged = await db.SetLists
             .Where(l => l.Id == id)
             .Select(l => new { l.Id, l.Name, SetCount = l.Sets.Count })
@@ -263,4 +270,4 @@ public class ListsController(LegoListDbContext db, UserService userService, ILog
 
 public record CreateListRequest(string Name);
 
-public record MergeListsRequest(int FromListId, string? NewName);
+public record MergeListsRequest(List<int> FromListIds, string? NewName);
