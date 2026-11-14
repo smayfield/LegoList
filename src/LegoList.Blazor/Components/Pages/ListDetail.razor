@@ -77,7 +77,7 @@ else
                 <button class="lb-btn" disabled="@(refreshingSetId is not null)" @onclick="LookUpMissing">
                     Look up missing details (@missingCount)
                 </button>
-                <span class="add-hint">Fetches the name, theme, picture and piece count from Rebrickable, one set at a time to stay under its rate limit.</span>
+                <span class="add-hint">Fetches the name, theme, picture and piece count from Rebrickable.</span>
             }
         </div>
     }
@@ -241,10 +241,10 @@ else
                                             @(refreshingSetId == set.Id ? "Looking up…" : "Look up details")
                                         </button>
                                     }
-                                    <a class="lb-btn lb-btn--small" href="/lists/@Id/sets/@set.Id" aria-label="Details for @(string.IsNullOrWhiteSpace(set.Name) ? set.SetNumber : set.Name)">Details</a>
+                                    <a class="lb-btn lb-btn--small lb-btn--blue" href="/lists/@Id/sets/@set.Id" aria-label="Details for @(string.IsNullOrWhiteSpace(set.Name) ? set.SetNumber : set.Name)">Details</a>
                                     <button class="lb-btn lb-btn--small lb-btn--blue" aria-label="Edit @set.Name" @onclick="() => StartEdit(set)">Edit</button>
                                     <button class="lb-btn lb-btn--small lb-btn--danger" aria-label="Delete @set.Name" @onclick="() => DeleteSet(set.Id)">Delete</button>
-                                    <button class="lb-btn lb-btn--small" aria-label="Move @set.Name to another list" @onclick="() => StartMove(set)">Move</button>
+                                    <button class="lb-btn lb-btn--small lb-btn--ink" aria-label="Move @set.Name to another list" @onclick="() => StartMove(set)">Move</button>
                                 }
                             </div>
                         </div>
