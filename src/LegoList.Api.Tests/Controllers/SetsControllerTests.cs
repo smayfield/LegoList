@@ -486,6 +486,185 @@ public class SetsControllerTests
         Assert.Equal(third.Id, db.LegoSets.Single().SetListId);
     }
 
+    [Fact]
+    public async Task Move_KeepsTargetDetails_AndFillsGapsAndMergesNotes_WhenCombining()
+    {
+        var (controller, db, user, list) = Scaffold();
+        var other = await AddList(db, user.Id, "Other");
+        var set = await AddSet(db, list, "75192", 1);
+        set.DisplayLocation = "Garage";
+        set.PurchasePrice = 99.99m;
+        set.Notes = "From the sale";
+        var existing = await AddSet(db, other, "75192", 1);
+        existing.Built = true;
+        existing.DisplayLocation = "Shelf";
+        existing.Notes = "Gift";
+        await db.SaveChangesAsync();
+
+        await controller.Move(list.Id, set.Id, new MoveSetRequest(other.Id));
+
+        var remaining = db.LegoSets.Single();
+        Assert.True(remaining.Built);
+        Assert.Equal("Shelf", remaining.DisplayLocation);   // target's own value wins
+        Assert.Equal(99.99m, remaining.PurchasePrice);      // gap filled from the moved copy
+        Assert.Equal("Gift\n\nFrom the sale", remaining.Notes);
+    }
+
+    // ── Get / details ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetAll_IncludesTheCollectionDetails()
+    {
+        var (controller, db, _, list) = Scaffold();
+        var set = await AddSet(db, list, "75192");
+        set.Built = true;
+        set.DisplayLocation = "Shelf";
+        set.PurchasePrice = 12.5m;
+        set.Notes = "Gift";
+        await db.SaveChangesAsync();
+
+        var ok = Assert.IsType<OkObjectResult>(await controller.GetAll(list.Id));
+
+        var item = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value)).RootElement[0];
+        Assert.True(item.GetProperty("Built").GetBoolean());
+        Assert.Equal("Shelf", item.GetProperty("DisplayLocation").GetString());
+        Assert.Equal(12.5m, item.GetProperty("PurchasePrice").GetDecimal());
+        Assert.Equal("Gift", item.GetProperty("Notes").GetString());
+    }
+
+    [Fact]
+    public async Task Get_ReturnsTheSet_WithItsDetailsAndMetadata()
+    {
+        var (controller, db, _, list) = Scaffold();
+        var set = await AddSet(db, list, "75192", 2);
+        set.Notes = "Gift";
+        db.SetMetadatas.Add(new SetMetadata { SetNumber = "75192", Name = "Falcon", ImageUrl = "https://img/x.jpg", PieceCount = 7541, FetchedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        var ok = Assert.IsType<OkObjectResult>(await controller.Get(list.Id, set.Id));
+
+        var body = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value)).RootElement;
+        Assert.Equal(set.Id, body.GetProperty("Id").GetInt32());
+        Assert.Equal(2, body.GetProperty("Quantity").GetInt32());
+        Assert.Equal("Gift", body.GetProperty("Notes").GetString());
+        Assert.Equal("https://img/x.jpg", body.GetProperty("ImageUrl").GetString());
+        Assert.Equal(7541, body.GetProperty("PieceCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task Get_ReturnsNotFound_WhenListNotOwned()
+    {
+        var (controller, _, _, _) = Scaffold();
+
+        Assert.IsType<NotFoundResult>(await controller.Get(999, 1));
+    }
+
+    [Fact]
+    public async Task Get_ReturnsNotFound_WhenTheSetIsInAnotherList()
+    {
+        var (controller, db, user, list) = Scaffold();
+        var other = await AddList(db, user.Id, "Other");
+        var set = await AddSet(db, other, "75192");
+
+        Assert.IsType<NotFoundResult>(await controller.Get(list.Id, set.Id));
+    }
+
+    [Fact]
+    public async Task UpdateDetails_ReturnsNotFound_WhenListNotOwned()
+    {
+        var (controller, _, _, _) = Scaffold();
+
+        var result = await controller.UpdateDetails(999, 1, new SetDetailsRequest(1, false, null, null, null));
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task UpdateDetails_ReturnsNotFound_WhenTheSetIsInAnotherList()
+    {
+        var (controller, db, user, list) = Scaffold();
+        var other = await AddList(db, user.Id, "Other");
+        var set = await AddSet(db, other, "75192");
+
+        var result = await controller.UpdateDetails(list.Id, set.Id, new SetDetailsRequest(1, true, "Shelf", null, null));
+
+        Assert.IsType<NotFoundResult>(result);
+        Assert.False(db.LegoSets.Single().Built);
+    }
+
+    [Fact]
+    public async Task UpdateDetails_SavesTheFields_AndLeavesRebrickableFieldsAlone()
+    {
+        var (controller, db, _, list) = Scaffold();
+        var set = await AddSet(db, list, "75192");
+
+        var result = await controller.UpdateDetails(list.Id, set.Id,
+            new SetDetailsRequest(4, true, "  Living room  ", 149.999m, "Missing one minifig"));
+
+        Assert.IsType<NoContentResult>(result);
+        var saved = db.LegoSets.Single();
+        Assert.Equal(4, saved.Quantity);
+        Assert.True(saved.Built);
+        Assert.Equal("Living room", saved.DisplayLocation);
+        Assert.Equal(150.00m, saved.PurchasePrice);
+        Assert.Equal("Missing one minifig", saved.Notes);
+        Assert.Equal("Set 75192", saved.Name);
+        Assert.Equal("T", saved.Theme);
+        Assert.Equal("75192", saved.SetNumber);
+    }
+
+    [Fact]
+    public async Task UpdateDetails_StoresBlankTextAndNoPriceAsNull()
+    {
+        var (controller, db, _, list) = Scaffold();
+        var set = await AddSet(db, list, "75192");
+        set.DisplayLocation = "Shelf";
+        set.PurchasePrice = 10m;
+        set.Notes = "Old";
+        await db.SaveChangesAsync();
+
+        await controller.UpdateDetails(list.Id, set.Id, new SetDetailsRequest(1, false, "   ", null, ""));
+
+        var saved = db.LegoSets.Single();
+        Assert.Null(saved.DisplayLocation);
+        Assert.Null(saved.PurchasePrice);
+        Assert.Null(saved.Notes);
+    }
+
+    private async Task AssertDetailsRejected(SetDetailsRequest request)
+    {
+        var (controller, db, _, list) = Scaffold();
+        var set = await AddSet(db, list, "75192", 2);
+
+        var result = await controller.UpdateDetails(list.Id, set.Id, request);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        var unchanged = db.LegoSets.Single();
+        Assert.Equal(2, unchanged.Quantity);
+        Assert.False(unchanged.Built);
+        Assert.Null(unchanged.Notes);
+    }
+
+    [Fact]
+    public Task UpdateDetails_RejectsQuantityBelowOne()
+        => AssertDetailsRejected(new SetDetailsRequest(0, true, null, null, "x"));
+
+    [Fact]
+    public Task UpdateDetails_RejectsNegativePrice()
+        => AssertDetailsRejected(new SetDetailsRequest(1, true, null, -0.01m, "x"));
+
+    [Fact]
+    public Task UpdateDetails_RejectsPriceTooLargeForTheColumn()
+        => AssertDetailsRejected(new SetDetailsRequest(1, true, null, 100_000_000m, "x"));
+
+    [Fact]
+    public Task UpdateDetails_RejectsOverlongLocation()
+        => AssertDetailsRejected(new SetDetailsRequest(1, true, new string('x', 256), null, "x"));
+
+    [Fact]
+    public Task UpdateDetails_RejectsOverlongNotes()
+        => AssertDetailsRejected(new SetDetailsRequest(1, true, null, null, new string('x', 4001)));
+
     // ── Update ───────────────────────────────────────────────────────────────
 
     [Fact]

@@ -105,11 +105,42 @@ public class SetsController(
                 s.Name,
                 s.Quantity,
                 s.SetListId,
+                s.Built,
+                s.DisplayLocation,
+                s.PurchasePrice,
+                s.Notes,
                 ImageUrl = s.SetMetadata != null ? s.SetMetadata.ImageUrl : null,
                 PieceCount = s.SetMetadata != null ? s.SetMetadata.PieceCount : (int?)null
             })
             .ToListAsync();
         return Ok(sets);
+    }
+
+    [HttpGet("{id}")]
+    public async Task<IActionResult> Get(int listId, int id)
+    {
+        var list = await GetOwnedListAsync(listId);
+        if (list is null) return NotFound();
+
+        var set = await db.LegoSets
+            .Where(s => s.Id == id && s.SetListId == listId)
+            .Select(s => new
+            {
+                s.Id,
+                s.SetNumber,
+                s.Theme,
+                s.Name,
+                s.Quantity,
+                s.SetListId,
+                s.Built,
+                s.DisplayLocation,
+                s.PurchasePrice,
+                s.Notes,
+                ImageUrl = s.SetMetadata != null ? s.SetMetadata.ImageUrl : null,
+                PieceCount = s.SetMetadata != null ? s.SetMetadata.PieceCount : (int?)null
+            })
+            .FirstOrDefaultAsync();
+        return set is null ? NotFound() : Ok(set);
     }
 
     [HttpPost]
@@ -142,6 +173,10 @@ public class SetsController(
             set.Name,
             set.Quantity,
             set.SetListId,
+            set.Built,
+            set.DisplayLocation,
+            set.PurchasePrice,
+            set.Notes,
             ImageUrl = metadata?.ImageUrl,
             PieceCount = metadata?.PieceCount,
             // True when Rebrickable couldn't be reached (rate limit/outage): the set was added
@@ -173,7 +208,7 @@ public class SetsController(
         var movedId = set.Id;
         if (existing is not null)
         {
-            existing.Quantity += set.Quantity;
+            existing.Absorb(set);
             db.LegoSets.Remove(set);
         }
         else
@@ -233,6 +268,10 @@ public class SetsController(
             set.Name,
             set.Quantity,
             set.SetListId,
+            set.Built,
+            set.DisplayLocation,
+            set.PurchasePrice,
+            set.Notes,
             ImageUrl = metadata?.ImageUrl,
             PieceCount = metadata?.PieceCount,
             Found = found
@@ -256,6 +295,38 @@ public class SetsController(
         return NoContent();
     }
 
+    /// <summary>Saves the user's own details about a set. Leaves the Rebrickable-sourced fields alone.</summary>
+    [HttpPut("{id}/details")]
+    public async Task<IActionResult> UpdateDetails(int listId, int id, [FromBody] SetDetailsRequest request)
+    {
+        var list = await GetOwnedListAsync(listId);
+        if (list is null) return NotFound();
+
+        var set = await db.LegoSets.FirstOrDefaultAsync(s => s.Id == id && s.SetListId == listId);
+        if (set is null) return NotFound();
+
+        if (request.Quantity < 1)
+            return BadRequest(new { Error = "Quantity must be at least 1." });
+        if (request.PurchasePrice is < 0 or > MaxPurchasePrice)
+            return BadRequest(new { Error = "Purchase price must be between 0 and 99,999,999.99." });
+        if (request.DisplayLocation?.Length > MaxLocationLength)
+            return BadRequest(new { Error = $"Display location can be at most {MaxLocationLength} characters." });
+        if (request.Notes?.Length > MaxNotesLength)
+            return BadRequest(new { Error = $"Notes can be at most {MaxNotesLength} characters." });
+
+        set.Quantity = request.Quantity;
+        set.Built = request.Built;
+        set.DisplayLocation = string.IsNullOrWhiteSpace(request.DisplayLocation) ? null : request.DisplayLocation.Trim();
+        set.PurchasePrice = request.PurchasePrice is { } price ? Math.Round(price, 2) : null;
+        set.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes;
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    private const decimal MaxPurchasePrice = 99_999_999.99m; // NUMERIC(10,2)
+    private const int MaxLocationLength = 255;
+    private const int MaxNotesLength = 4000;
+
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int listId, int id)
     {
@@ -276,3 +347,4 @@ public record CreateSetRequest(string SetNumber, int Quantity);
 
 public record MoveSetRequest(int TargetListId);
 public record SetRequest(string SetNumber, string Theme, string Name, int Quantity);
+public record SetDetailsRequest(int Quantity, bool Built, string? DisplayLocation, decimal? PurchasePrice, string? Notes);

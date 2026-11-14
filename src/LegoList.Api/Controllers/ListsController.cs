@@ -140,6 +140,10 @@ public class ListsController(LegoListDbContext db, UserService userService, ILog
                     s.Name,
                     s.Quantity,
                     s.SetListId,
+                    s.Built,
+                    s.DisplayLocation,
+                    s.PurchasePrice,
+                    s.Notes,
                     ImageUrl = s.SetMetadata != null ? s.SetMetadata.ImageUrl : null,
                     PieceCount = s.SetMetadata != null ? s.SetMetadata.PieceCount : (int?)null
                 }).ToList()
@@ -215,7 +219,7 @@ public class ListsController(LegoListDbContext db, UserService userService, ILog
             var existing = targetSets.FirstOrDefault(t => t.SetNumber == set.SetNumber);
             if (existing is not null)
             {
-                existing.Quantity += set.Quantity;
+                existing.Absorb(set);
                 db.LegoSets.Remove(set);
             }
             else

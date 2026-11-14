@@ -49,7 +49,8 @@ Two projects in one solution:
 
 ### LegoList.Api — ASP.NET Core 10.0 Web API (`net10.0`)
 - **Entry point**: `src/LegoList.Api/Program.cs` — registers EF Core (PostgreSQL), CORS, controllers, OpenAPI.
-- **Models**: `src/LegoList.Api/Models/` — `SetList`, `LegoSet`
+- **Models**: `src/LegoList.Api/Models/` — `SetList`, `LegoSet` (includes the user's own details: built, display location, purchase price, notes), `SetMetadata` (cached Rebrickable data per set number)
+- **Services**: `src/LegoList.Api/Services/` — `RebrickableService` (set lookups, rate-limited by `RebrickableRateLimiter` / `RebrickableThrottlingHandler`), `ListExportService`, `UserService`
 - **Data**: `src/LegoList.Api/Data/LegoListDbContext.cs` — EF Core context
 - **Controllers**: `src/LegoList.Api/Controllers/` — `ListsController` (`api/lists`), `SetsController` (`api/lists/{listId}/sets`)
 - **Configuration**: connection string in `appsettings.json` (`DefaultConnection`)
@@ -57,7 +58,9 @@ Two projects in one solution:
 
 ### LegoList.Blazor — Blazor Web App (`net10.0`, Server interactivity)
 - **Entry point**: `src/LegoList.Blazor/Program.cs` — registers `IHttpClientFactory` pointed at the API
-- **Pages**: `src/LegoList.Blazor/Components/Pages/` — `Lists.razor` (`/`), `ListDetail.razor` (`/lists/{id}`)
+- **Pages**: `src/LegoList.Blazor/Components/Pages/` — `Lists.razor` (`/`), `ListDetail.razor` (`/lists/{id}`), `SetDetail.razor` (`/lists/{listId}/sets/{id}`)
+- **Components**: `src/LegoList.Blazor/Components/ImageLightbox.razor` (modal picture viewer)
+- **Services**: `src/LegoList.Blazor/Services/` — `BulkSetParser`, `BulkLookupRunner` (queue for the bulk "Look up missing details"); both are linked into the test project so they can be unit-tested
 - **Models**: `src/LegoList.Blazor/Models/` — `SetListDto`, `LegoSetDto`
 - **Configuration**: `ApiBaseUrl` in `appsettings.json` (defaults to `http://localhost:5003/`)
 
