@@ -378,6 +378,114 @@ public class SetsControllerTests
         Assert.Equal("My custom MOC", db.LegoSets.Single().Name);
     }
 
+    // ── Move ─────────────────────────────────────────────────────────────────
+
+    private static async Task<SetList> AddList(LegoListDbContext db, int userId, string name)
+    {
+        var list = new SetList { Name = name, UserId = userId };
+        db.SetLists.Add(list);
+        await db.SaveChangesAsync();
+        return list;
+    }
+
+    private static async Task<LegoSet> AddSet(LegoListDbContext db, SetList list, string number, int quantity = 1)
+    {
+        var set = new LegoSet { SetListId = list.Id, SetNumber = number, Name = "Set " + number, Theme = "T", Quantity = quantity };
+        db.LegoSets.Add(set);
+        await db.SaveChangesAsync();
+        return set;
+    }
+
+    [Fact]
+    public async Task Move_MovesTheSetToTheOtherList()
+    {
+        var (controller, db, user, list) = Scaffold();
+        var other = await AddList(db, user.Id, "Other");
+        var set = await AddSet(db, list, "75192", 2);
+
+        var result = await controller.Move(list.Id, set.Id, new MoveSetRequest(other.Id));
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var doc = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));
+        Assert.Equal("Other", doc.RootElement.GetProperty("TargetListName").GetString());
+        Assert.False(doc.RootElement.GetProperty("CombinedWithExisting").GetBoolean());
+        var moved = db.LegoSets.Single();
+        Assert.Equal(other.Id, moved.SetListId);
+        Assert.Equal(2, moved.Quantity);
+    }
+
+    [Fact]
+    public async Task Move_AddsQuantities_WhenTheTargetAlreadyHasTheSet()
+    {
+        var (controller, db, user, list) = Scaffold();
+        var other = await AddList(db, user.Id, "Other");
+        var set = await AddSet(db, list, "75192", 2);
+        await AddSet(db, other, "75192", 3);
+
+        var result = await controller.Move(list.Id, set.Id, new MoveSetRequest(other.Id));
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var doc = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));
+        Assert.True(doc.RootElement.GetProperty("CombinedWithExisting").GetBoolean());
+        var remaining = db.LegoSets.Single();
+        Assert.Equal(other.Id, remaining.SetListId);
+        Assert.Equal(5, remaining.Quantity);
+    }
+
+    [Fact]
+    public async Task Move_RejectsMovingToTheSameList()
+    {
+        var (controller, db, _, list) = Scaffold();
+        var set = await AddSet(db, list, "75192");
+
+        var result = await controller.Move(list.Id, set.Id, new MoveSetRequest(list.Id));
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal(list.Id, db.LegoSets.Single().SetListId);
+    }
+
+    [Fact]
+    public async Task Move_ReturnsNotFound_WhenTheTargetBelongsToSomeoneElse()
+    {
+        var (controller, db, _, list) = Scaffold();
+        var other = new User { GoogleSub = "sub-2", Email = "b@b.com", CreatedAt = DateTime.UtcNow };
+        db.Users.Add(other);
+        await db.SaveChangesAsync();
+        var theirs = await AddList(db, other.Id, "Theirs");
+        var set = await AddSet(db, list, "75192");
+
+        var result = await controller.Move(list.Id, set.Id, new MoveSetRequest(theirs.Id));
+
+        Assert.IsType<NotFoundResult>(result);
+        Assert.Equal(list.Id, db.LegoSets.Single().SetListId);
+    }
+
+    [Fact]
+    public async Task Move_ReturnsNotFound_WhenTheSourceListIsNotTheirs()
+    {
+        var (controller, db, user, list) = Scaffold();
+        var other = await AddList(db, user.Id, "Other");
+        var set = await AddSet(db, list, "75192");
+
+        var result = await controller.Move(999, set.Id, new MoveSetRequest(other.Id));
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task Move_ReturnsNotFound_WhenTheSetIsNotInTheSourceList()
+    {
+        var (controller, db, user, list) = Scaffold();
+        var other = await AddList(db, user.Id, "Other");
+        var third = await AddList(db, user.Id, "Third");
+        var set = await AddSet(db, third, "75192");
+
+        var result = await controller.Move(list.Id, set.Id, new MoveSetRequest(other.Id));
+
+        Assert.IsType<NotFoundResult>(result);
+        Assert.Equal(third.Id, db.LegoSets.Single().SetListId);
+    }
+
     // ── Update ───────────────────────────────────────────────────────────────
 
     [Fact]

@@ -150,6 +150,48 @@ public class SetsController(
         });
     }
 
+    /// <summary>
+    /// Moves a set to another of the user's lists. If the target already has that set number,
+    /// the quantities are added together instead of listing the set twice.
+    /// </summary>
+    [HttpPost("{id}/move")]
+    public async Task<IActionResult> Move(int listId, int id, [FromBody] MoveSetRequest request)
+    {
+        var list = await GetOwnedListAsync(listId);
+        if (list is null) return NotFound();
+
+        if (request.TargetListId == listId)
+            return BadRequest(new { Error = "The set is already in that list." });
+
+        var target = await GetOwnedListAsync(request.TargetListId);
+        if (target is null) return NotFound();
+
+        var set = await db.LegoSets.FirstOrDefaultAsync(s => s.Id == id && s.SetListId == listId);
+        if (set is null) return NotFound();
+
+        var existing = await db.LegoSets.FirstOrDefaultAsync(s => s.SetListId == target.Id && s.SetNumber == set.SetNumber);
+        var movedId = set.Id;
+        if (existing is not null)
+        {
+            existing.Quantity += set.Quantity;
+            db.LegoSets.Remove(set);
+        }
+        else
+        {
+            set.SetListId = target.Id;
+        }
+        await db.SaveChangesAsync();
+
+        logger.LogInformation("Moved set {SetId} from list {FromId} to list {ToId}", movedId, listId, target.Id);
+        return Ok(new
+        {
+            Id = existing?.Id ?? movedId,
+            SetListId = target.Id,
+            TargetListName = target.Name,
+            CombinedWithExisting = existing is not null
+        });
+    }
+
     /// <summary>Looks the set up on Rebrickable again (ignoring the cache) and fills in its details.</summary>
     [HttpPost("{id}/refresh")]
     public async Task<IActionResult> Refresh(int listId, int id)
@@ -231,4 +273,6 @@ public class SetsController(
 }
 
 public record CreateSetRequest(string SetNumber, int Quantity);
+
+public record MoveSetRequest(int TargetListId);
 public record SetRequest(string SetNumber, string Theme, string Name, int Quantity);

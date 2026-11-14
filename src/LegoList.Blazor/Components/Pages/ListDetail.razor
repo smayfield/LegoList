@@ -138,15 +138,48 @@ else
                                 <span class="set-card__pieces">@pieces.ToString("N0") pieces</span>
                             }
                             <div class="set-card__actions">
-                                @if (set.ImageUrl is null)
+                                @if (movingSetId == set.Id)
                                 {
-                                    <button class="lb-btn lb-btn--small" aria-label="Look up details for @set.SetNumber" title="Fetch the name, theme, picture and piece count from Rebrickable"
-                                            disabled="@(refreshingSetId == set.Id)" @onclick="() => RefreshSet(set.Id)">
-                                        @(refreshingSetId == set.Id ? "Looking up…" : "Look up details")
-                                    </button>
+                                    @if (otherLists is null)
+                                    {
+                                        <span class="add-hint">Loading your lists…</span>
+                                    }
+                                    else if (otherLists.Count == 0)
+                                    {
+                                        <span class="add-hint">You have no other lists yet. Create one on the lists page first.</span>
+                                        <button class="lb-btn lb-btn--small" @onclick="CancelMove">Close</button>
+                                    }
+                                    else
+                                    {
+                                        <label class="lb-field set-card__move">
+                                            Move to
+                                            <select class="lb-input" @bind="moveTargetId">
+                                                <option value="0">Choose a list…</option>
+                                                @foreach (var other in otherLists)
+                                                {
+                                                    <option value="@other.Id">@other.Name</option>
+                                                }
+                                            </select>
+                                        </label>
+                                        <button class="lb-btn lb-btn--small lb-btn--blue" disabled="@(moveTargetId == 0 || isMoving)" @onclick="MoveSet">
+                                            @(isMoving ? "Moving…" : "Move")
+                                        </button>
+                                        <button class="lb-btn lb-btn--small" disabled="@isMoving" @onclick="CancelMove">Cancel</button>
+                                    }
                                 }
-                                <button class="lb-btn lb-btn--small lb-btn--blue" aria-label="Edit @set.Name" @onclick="() => StartEdit(set)">Edit</button>
-                                <button class="lb-btn lb-btn--small lb-btn--danger" aria-label="Delete @set.Name" @onclick="() => DeleteSet(set.Id)">Delete</button>
+                                else
+                                {
+                                    @if (set.ImageUrl is null)
+                                    {
+                                        <button class="lb-btn lb-btn--small" aria-label="Look up details for @set.SetNumber" title="Fetch the name, theme, picture and piece count from Rebrickable"
+                                                disabled="@(refreshingSetId == set.Id)" @onclick="() => RefreshSet(set.Id)">
+                                            @(refreshingSetId == set.Id ? "Looking up…" : "Look up details")
+                                        </button>
+                                    }
+                                    <button class="lb-btn lb-btn--small lb-btn--blue" aria-label="Edit @set.Name" @onclick="() => StartEdit(set)">Edit</button>
+                                    <button class="lb-btn lb-btn--small lb-btn--danger" aria-label="Delete @set.Name" @onclick="() => DeleteSet(set.Id)">Delete</button>
+                                    <button class="lb-btn lb-btn--small" aria-label="Move @set.Name to another list" @onclick="() => StartMove(set)">Move</button>
+                                }
                             </div>
                         </div>
                     </article>
@@ -172,6 +205,12 @@ else
     private string bulkText = string.Empty;
     private bool isBulkAdding;
     private string? bulkProgress;
+
+    // Move state
+    private int? movingSetId;
+    private int moveTargetId;
+    private bool isMoving;
+    private List<SetListDto>? otherLists;
 
     // Refresh state
     private int? refreshingSetId;
@@ -311,6 +350,71 @@ else
         infoMessage = string.Join(" ", parts);
 
         await LoadList();
+    }
+
+    private async Task StartMove(LegoSetDto set)
+    {
+        movingSetId = set.Id;
+        moveTargetId = 0;
+        otherLists = null;
+        errorMessage = null;
+        infoMessage = null;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            var all = await http.GetFromJsonAsync<List<SetListDto>>("api/lists") ?? [];
+            // Ignore a stale answer if the user already closed or switched the picker.
+            if (movingSetId == set.Id)
+                otherLists = all.Where(l => l.Id != Id).ToList();
+        }
+        catch (Exception ex)
+        {
+            movingSetId = null;
+            errorMessage = $"Failed to load your lists: {ex.Message}";
+        }
+    }
+
+    private void CancelMove()
+    {
+        movingSetId = null;
+        otherLists = null;
+    }
+
+    private async Task MoveSet()
+    {
+        if (movingSetId is not int setId || moveTargetId == 0) return;
+        isMoving = true;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            var response = await http.PostAsJsonAsync($"api/lists/{Id}/sets/{setId}/move", new { TargetListId = moveTargetId });
+            if (response.IsSuccessStatusCode)
+            {
+                var moved = await response.Content.ReadFromJsonAsync<LegoSetDto>();
+                var name = list?.Sets.FirstOrDefault(s => s.Id == setId)?.Name;
+                infoMessage = $"Moved {(string.IsNullOrWhiteSpace(name) ? "the set" : $"“{name}”")} to “{moved?.TargetListName}”."
+                    + (moved?.CombinedWithExisting == true ? " It was already there, so the quantities were added together." : "");
+                errorMessage = null;
+                CancelMove();
+                await LoadList();
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                errorMessage = "That set or list no longer exists. Reload the page and try again.";
+            }
+            else
+            {
+                errorMessage = $"Failed to move set: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isMoving = false;
+        }
     }
 
     private async Task RefreshSet(int setId)
