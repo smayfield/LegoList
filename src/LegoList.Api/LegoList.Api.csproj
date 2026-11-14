@@ -17,4 +17,9 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Shared with the Blazor UI so exports use the same theme / set-number order as the list page. -->
+    <Compile Include="..\LegoList.Blazor\Services\SetGrouping.cs" Link="Linked\SetGrouping.cs" />
+  </ItemGroup>
+
 </Project>

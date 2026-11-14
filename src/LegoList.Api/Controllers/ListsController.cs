@@ -55,7 +55,6 @@ public class ListsController(LegoListDbContext db, UserService userService, ILog
             {
                 l.Name,
                 Sets = l.Sets
-                    .OrderBy(s => s.Theme).ThenBy(s => s.Name).ThenBy(s => s.SetNumber)
                     .Select(s => new
                     {
                         s.SetNumber,
@@ -71,7 +70,7 @@ public class ListsController(LegoListDbContext db, UserService userService, ILog
 
         var lists = rows
             .Select(r => new ExportList(r.Name,
-                r.Sets.Select(s => new ExportSet(s.SetNumber, s.Name, s.Theme, s.Quantity, s.PieceCount)).ToList()))
+                ListExportService.InExportOrder(r.Sets.Select(s => new ExportSet(s.SetNumber, s.Name, s.Theme, s.Quantity, s.PieceCount)))))
             .ToList();
 
         var stamp = DateTime.UtcNow;

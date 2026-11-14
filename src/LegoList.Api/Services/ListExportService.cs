@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using LegoList.Blazor.Services;
 
 namespace LegoList.Services;
 
@@ -17,6 +18,10 @@ public record ExportList(string Name, IReadOnlyList<ExportSet> Sets)
 /// <summary>Turns lists into a CSV or PDF file.</summary>
 public static class ListExportService
 {
+    /// <summary>Orders sets by theme (A–Z, no theme last), then by set number within each theme.</summary>
+    public static IReadOnlyList<ExportSet> InExportOrder(IEnumerable<ExportSet> sets) =>
+        SetGrouping.Group(sets, s => s.Theme, s => s.SetNumber).SelectMany(g => g.Sets).ToList();
+
     // ── CSV ──────────────────────────────────────────────────────────────────
 
     public static byte[] ToCsv(IReadOnlyList<ExportList> lists)
