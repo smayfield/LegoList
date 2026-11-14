@@ -57,6 +57,253 @@ public class ListsControllerTests
         Assert.Equal(expected, doc.RootElement.GetArrayLength());
     }
 
+    // ── Rename ───────────────────────────────────────────────────────────────
+
+    private static async Task<(ListsController controller, LegoList.Data.LegoListDbContext db, User user)> ScaffoldUser(string sub = "sub-1")
+    {
+        var (controller, db) = CreateControllerWithDb(sub);
+        var user = new User { GoogleSub = sub, Email = sub + "@example.com", CreatedAt = DateTime.UtcNow };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        return (controller, db, user);
+    }
+
+    private static async Task<SetList> AddList(LegoList.Data.LegoListDbContext db, User user, string name, params (string number, int qty)[] sets)
+    {
+        var list = new SetList { Name = name, UserId = user.Id };
+        db.SetLists.Add(list);
+        await db.SaveChangesAsync();
+        foreach (var (number, qty) in sets)
+            db.LegoSets.Add(new LegoSet { SetListId = list.Id, SetNumber = number, Name = "Set " + number, Theme = "T", Quantity = qty });
+        await db.SaveChangesAsync();
+        return list;
+    }
+
+    [Fact]
+    public async Task Rename_TrimsAndSavesTheName()
+    {
+        var (controller, db, user) = await ScaffoldUser();
+        var list = await AddList(db, user, "Old");
+
+        var result = await controller.Rename(list.Id, new CreateListRequest("  New name  "));
+
+        Assert.IsType<NoContentResult>(result);
+        Assert.Equal("New name", db.SetLists.Single().Name);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task Rename_RejectsABlankName(string name)
+    {
+        var (controller, db, user) = await ScaffoldUser();
+        var list = await AddList(db, user, "Old");
+
+        var result = await controller.Rename(list.Id, new CreateListRequest(name));
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal("Old", db.SetLists.Single().Name);
+    }
+
+    [Fact]
+    public async Task Rename_RejectsATooLongName()
+    {
+        var (controller, db, user) = await ScaffoldUser();
+        var list = await AddList(db, user, "Old");
+
+        var result = await controller.Rename(list.Id, new CreateListRequest(new string('x', 256)));
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Rename_ReturnsNotFound_ForSomeoneElsesList()
+    {
+        var (controller, db, _) = await ScaffoldUser("sub-1");
+        var other = new User { GoogleSub = "sub-2", Email = "b@b.com", CreatedAt = DateTime.UtcNow };
+        db.Users.Add(other);
+        await db.SaveChangesAsync();
+        var theirs = await AddList(db, other, "Theirs");
+
+        var result = await controller.Rename(theirs.Id, new CreateListRequest("Mine now"));
+
+        Assert.IsType<NotFoundResult>(result);
+        Assert.Equal("Theirs", db.SetLists.Single().Name);
+    }
+
+    // ── Merge ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Merge_MovesSetsIntoTarget_AndDeletesTheSource()
+    {
+        var (controller, db, user) = await ScaffoldUser();
+        var target = await AddList(db, user, "Target", ("111", 1));
+        var source = await AddList(db, user, "Source", ("222", 1), ("333", 2));
+
+        var result = await controller.Merge(target.Id, new MergeListsRequest(source.Id, null));
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var doc = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));
+        Assert.Equal("Target", doc.RootElement.GetProperty("Name").GetString());
+        Assert.Equal(3, doc.RootElement.GetProperty("SetCount").GetInt32());
+        Assert.Equal(target.Id, Assert.Single(db.SetLists).Id);
+        Assert.Equal(3, db.LegoSets.Count(s => s.SetListId == target.Id));
+        Assert.Equal(3, db.LegoSets.Count());
+    }
+
+    [Fact]
+    public async Task Merge_CombinesQuantities_OfSetsInBothLists()
+    {
+        var (controller, db, user) = await ScaffoldUser();
+        var target = await AddList(db, user, "Target", ("111", 1), ("222", 1));
+        var source = await AddList(db, user, "Source", ("111", 4));
+
+        await controller.Merge(target.Id, new MergeListsRequest(source.Id, null));
+
+        Assert.Equal(2, db.LegoSets.Count());
+        Assert.Equal(5, db.LegoSets.Single(s => s.SetNumber == "111").Quantity);
+    }
+
+    [Fact]
+    public async Task Merge_CanGiveTheResultANewName()
+    {
+        var (controller, db, user) = await ScaffoldUser();
+        var target = await AddList(db, user, "Target");
+        var source = await AddList(db, user, "Source");
+
+        await controller.Merge(target.Id, new MergeListsRequest(source.Id, "  Everything  "));
+
+        Assert.Equal("Everything", Assert.Single(db.SetLists).Name);
+    }
+
+    [Fact]
+    public async Task Merge_RejectsABlankNewName()
+    {
+        var (controller, db, user) = await ScaffoldUser();
+        var target = await AddList(db, user, "Target");
+        var source = await AddList(db, user, "Source");
+
+        var result = await controller.Merge(target.Id, new MergeListsRequest(source.Id, "  "));
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal(2, db.SetLists.Count());
+    }
+
+    [Fact]
+    public async Task Merge_RejectsMergingAListIntoItself()
+    {
+        var (controller, db, user) = await ScaffoldUser();
+        var list = await AddList(db, user, "Only", ("111", 1));
+
+        var result = await controller.Merge(list.Id, new MergeListsRequest(list.Id, null));
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Single(db.LegoSets);
+    }
+
+    [Fact]
+    public async Task Merge_ReturnsNotFound_WhenEitherListBelongsToSomeoneElse()
+    {
+        var (controller, db, user) = await ScaffoldUser("sub-1");
+        var other = new User { GoogleSub = "sub-2", Email = "b@b.com", CreatedAt = DateTime.UtcNow };
+        db.Users.Add(other);
+        await db.SaveChangesAsync();
+        var mine = await AddList(db, user, "Mine", ("111", 1));
+        var theirs = await AddList(db, other, "Theirs", ("222", 1));
+
+        Assert.IsType<NotFoundResult>(await controller.Merge(mine.Id, new MergeListsRequest(theirs.Id, null)));
+        Assert.IsType<NotFoundResult>(await controller.Merge(theirs.Id, new MergeListsRequest(mine.Id, null)));
+        Assert.Equal(2, db.SetLists.Count());
+        Assert.Equal(2, db.LegoSets.Count());
+    }
+
+    // ── Export ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Export_Csv_ReturnsAllOfTheUsersLists()
+    {
+        var (controller, db, user) = await ScaffoldUser();
+        await AddList(db, user, "One", ("111", 1));
+        await AddList(db, user, "Two", ("222", 2));
+        var other = new User { GoogleSub = "sub-2", Email = "b@b.com", CreatedAt = DateTime.UtcNow };
+        db.Users.Add(other);
+        await db.SaveChangesAsync();
+        await AddList(db, other, "Theirs", ("999", 1));
+
+        var result = await controller.Export("csv", null);
+
+        var file = Assert.IsType<FileContentResult>(result);
+        Assert.StartsWith("text/csv", file.ContentType);
+        Assert.StartsWith("legolist-export-", file.FileDownloadName);
+        Assert.EndsWith(".csv", file.FileDownloadName);
+        var text = System.Text.Encoding.UTF8.GetString(file.FileContents);
+        Assert.Contains("111", text);
+        Assert.Contains("222", text);
+        Assert.DoesNotContain("999", text);
+    }
+
+    [Fact]
+    public async Task Export_OnlyIncludesTheRequestedLists()
+    {
+        var (controller, db, user) = await ScaffoldUser();
+        var one = await AddList(db, user, "One", ("111", 1));
+        await AddList(db, user, "Two", ("222", 2));
+
+        var result = await controller.Export("csv", one.Id.ToString());
+
+        var file = Assert.IsType<FileContentResult>(result);
+        var text = System.Text.Encoding.UTF8.GetString(file.FileContents);
+        Assert.Contains("111", text);
+        Assert.DoesNotContain("222", text);
+        Assert.Equal($"One-{DateTime.UtcNow:yyyyMMdd}.csv", file.FileDownloadName);
+    }
+
+    [Fact]
+    public async Task Export_Pdf_ReturnsAPdf()
+    {
+        var (controller, db, user) = await ScaffoldUser();
+        await AddList(db, user, "One", ("111", 1));
+
+        var result = await controller.Export("PDF", null);
+
+        var file = Assert.IsType<FileContentResult>(result);
+        Assert.Equal("application/pdf", file.ContentType);
+        Assert.StartsWith("%PDF-", System.Text.Encoding.ASCII.GetString(file.FileContents, 0, 5));
+    }
+
+    [Fact]
+    public async Task Export_IncludesPieceCountsFromMetadata()
+    {
+        var (controller, db, user) = await ScaffoldUser();
+        await AddList(db, user, "One", ("75192", 2));
+        db.SetMetadatas.Add(new SetMetadata { SetNumber = "75192", PieceCount = 7541, FetchedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        var file = Assert.IsType<FileContentResult>(await controller.Export("csv", null));
+
+        Assert.Contains(",2,7541,15082", System.Text.Encoding.UTF8.GetString(file.FileContents));
+    }
+
+    [Theory]
+    [InlineData("docx", null)]
+    [InlineData(null, null)]
+    [InlineData("csv", "abc")]
+    public async Task Export_RejectsBadRequests(string? format, string? ids)
+    {
+        var (controller, _, _) = await ScaffoldUser();
+
+        Assert.IsType<BadRequestObjectResult>(await controller.Export(format, ids));
+    }
+
+    [Fact]
+    public async Task Export_ReturnsNotFound_WhenNoRequestedListIsTheirs()
+    {
+        var (controller, db, user) = await ScaffoldUser();
+        await AddList(db, user, "One");
+
+        Assert.IsType<NotFoundResult>(await controller.Export("csv", "9999"));
+    }
+
     // ── GetAll ───────────────────────────────────────────────────────────────
 
     [Fact]
