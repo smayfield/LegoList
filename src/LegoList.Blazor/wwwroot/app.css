@@ -186,6 +186,12 @@ a {
     --btn-ink: #fff;
 }
 
+.lb-btn--green {
+    --btn: #1e8e3e;
+    --btn-edge: #146c2c;
+    --btn-ink: #fff;
+}
+
 .lb-btn--blue {
     --btn: var(--blue);
     --btn-edge: var(--blue-edge);
@@ -961,4 +967,58 @@ a {
     .set-detail {
         grid-template-columns: minmax(0, 1fr);
     }
+}
+
+/* ---------- Theme grouping and filter ---------- */
+
+.theme-filter {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.theme-filter__label {
+    font-weight: 600;
+    color: var(--ink-soft);
+}
+
+.theme-chip {
+    padding: 0.25rem 0.8rem;
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--sky);
+    border: 2px solid var(--blue);
+    border-radius: 999px;
+    cursor: pointer;
+}
+
+.theme-chip--on {
+    color: #fff;
+    background: var(--blue);
+}
+
+.theme-chip__count {
+    opacity: 0.75;
+    font-weight: 400;
+}
+
+.theme-group {
+    margin-bottom: 2.25rem;
+}
+
+.theme-group__title {
+    margin: 0 0 1rem;
+    padding-bottom: 0.35rem;
+    font-size: 1.6rem;
+    border-bottom: 3px solid var(--sun);
+}
+
+.theme-group__count {
+    font-size: 1rem;
+    font-weight: 400;
+    color: var(--ink-soft);
 }

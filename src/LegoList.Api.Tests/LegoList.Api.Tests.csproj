@@ -26,6 +26,7 @@
     <!-- Pure parsing logic that lives in the Blazor app; compiled here so it can be tested. -->
     <Compile Include="..\LegoList.Blazor\Services\BulkSetParser.cs" Link="Linked\BulkSetParser.cs" />
     <Compile Include="..\LegoList.Blazor\Services\BulkLookupRunner.cs" Link="Linked\BulkLookupRunner.cs" />
+    <Compile Include="..\LegoList.Blazor\Services\SetGrouping.cs" Link="Linked\SetGrouping.cs" />
   </ItemGroup>
 
   <ItemGroup>

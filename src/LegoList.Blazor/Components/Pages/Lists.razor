@@ -146,7 +146,7 @@ else
                         disabled="@(isMerging || (mergeUseNewName && string.IsNullOrWhiteSpace(mergeNewName)))">
                     @(isMerging ? "Merging…" : "Merge lists")
                 </button>
-                <button class="lb-btn" @onclick="CloseMerge" disabled="@isMerging">Cancel</button>
+                <button class="lb-btn lb-btn--red" @onclick="CloseMerge" disabled="@isMerging">Cancel</button>
             </div>
         </section>
     }
@@ -162,7 +162,7 @@ else
                         <input id="rename-@list.Id" class="lb-input" maxlength="255" @bind="renameText" @bind:event="oninput" />
                         <div class="brick__rename-actions">
                             <button type="submit" class="lb-btn lb-btn--small lb-btn--blue" disabled="@string.IsNullOrWhiteSpace(renameText)">Save</button>
-                            <button type="button" class="lb-btn lb-btn--small" @onclick="CancelRename">Cancel</button>
+                            <button type="button" class="lb-btn lb-btn--small lb-btn--red" @onclick="CancelRename">Cancel</button>
                         </div>
                     </form>
                 }
