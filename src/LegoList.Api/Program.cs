@@ -36,13 +36,18 @@ namespace LegoList
             builder.Services.AddAuthorization();
             builder.Services.AddScoped<UserService>();
 
+            // Rebrickable allows about one request per second: space calls out and retry 429s.
+            builder.Services.AddSingleton(new RebrickableRateLimiter(
+                TimeSpan.FromMilliseconds(builder.Configuration.GetValue("Rebrickable:MinRequestIntervalMs", 1100))));
+            builder.Services.AddSingleton<ThemeNameCache>();
+            builder.Services.AddTransient<RebrickableThrottlingHandler>();
             builder.Services.AddHttpClient<RebrickableService>(c =>
             {
                 c.BaseAddress = new Uri("https://rebrickable.com/");
                 var apiKey = builder.Configuration["Rebrickable:ApiKey"] ?? string.Empty;
                 if (!string.IsNullOrEmpty(apiKey))
                     c.DefaultRequestHeaders.Add("Authorization", $"key {apiKey}");
-            });
+            }).AddHttpMessageHandler<RebrickableThrottlingHandler>();
 
             builder.Services.AddControllers();
             builder.Services.AddOpenApi();

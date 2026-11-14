@@ -2,13 +2,21 @@ using System.Text.Json.Serialization;
 
 namespace LegoList.Services;
 
-public class RebrickableService(HttpClient http, ILogger<RebrickableService> logger)
+public class RebrickableService(
+    HttpClient http,
+    ILogger<RebrickableService> logger,
+    ThemeNameCache? themeCache = null)
 {
+    private readonly ThemeNameCache themes = themeCache ?? new ThemeNameCache();
+
     public record RebrickableSetData(
         string? Name,
         string? Theme,
         string? ImageUrl,
-        int? PieceCount);
+        int? PieceCount,
+        // True when this is a definitive answer worth storing (found, or Rebrickable says the set
+        // doesn't exist). False after a rate limit, outage or other failure, so it gets retried.
+        bool Cacheable = false);
 
     public async Task<RebrickableSetData> FetchAsync(string setNumber)
     {
@@ -19,6 +27,7 @@ public class RebrickableService(HttpClient http, ILogger<RebrickableService> log
 
         string? name = null, theme = null, imageUrl = null;
         int? pieceCount = null;
+        var cacheable = false;
 
         try
         {
@@ -31,12 +40,20 @@ public class RebrickableService(HttpClient http, ILogger<RebrickableService> log
                     name = data.Name;
                     imageUrl = data.SetImgUrl;
                     pieceCount = data.NumParts;
+                    cacheable = true;
                     if (data.ThemeId.HasValue)
-                        theme = await FetchThemeNameAsync(data.ThemeId.Value);
+                    {
+                        var (themeName, definitive) = await FetchThemeNameAsync(data.ThemeId.Value);
+                        theme = themeName;
+                        cacheable = definitive;
+                    }
                 }
             }
             else
             {
+                // 404 means Rebrickable doesn't know the set: a definitive answer. Anything else
+                // (429, 5xx, ...) is a failure and must not be remembered.
+                cacheable = response.StatusCode == System.Net.HttpStatusCode.NotFound;
                 logger.LogInformation("Rebrickable returned {Status} for set {SetNumber}", response.StatusCode, setNumber);
             }
         }
@@ -45,22 +62,29 @@ public class RebrickableService(HttpClient http, ILogger<RebrickableService> log
             logger.LogWarning(ex, "Failed to fetch Rebrickable data for set {SetNumber}", setNumber);
         }
 
-        return new RebrickableSetData(name, theme, imageUrl, pieceCount);
+        return new RebrickableSetData(name, theme, imageUrl, pieceCount, cacheable);
     }
 
-    private async Task<string?> FetchThemeNameAsync(int themeId)
+    // Definitive is false when the lookup failed (not "theme not found"), so the caller can retry later.
+    private async Task<(string? Name, bool Definitive)> FetchThemeNameAsync(int themeId)
     {
+        if (themes.TryGet(themeId, out var cached))
+            return (cached, true);
+
         try
         {
             var response = await http.GetAsync($"api/v3/lego/themes/{themeId}/");
-            if (!response.IsSuccessStatusCode) return null;
+            if (!response.IsSuccessStatusCode)
+                return (null, response.StatusCode == System.Net.HttpStatusCode.NotFound);
             var data = await response.Content.ReadFromJsonAsync<RebrickableThemeResponse>();
-            return data?.Name;
+            if (data?.Name is { } name)
+                themes.Set(themeId, name);
+            return (data?.Name, true);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to fetch Rebrickable theme {ThemeId}", themeId);
-            return null;
+            return (null, false);
         }
     }
 

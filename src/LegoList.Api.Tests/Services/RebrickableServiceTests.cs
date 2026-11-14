@@ -118,6 +118,78 @@ public class RebrickableServiceTests
         Assert.Null(result.PieceCount);
     }
 
+    [Fact]
+    public async Task FetchAsync_IsCacheable_WhenSetFound()
+    {
+        var service = Create(_ => Json("{\"name\":\"Falcon\",\"theme_id\":null}"));
+
+        Assert.True((await service.FetchAsync("75192")).Cacheable);
+    }
+
+    [Fact]
+    public async Task FetchAsync_IsCacheable_WhenSetDoesNotExist()
+    {
+        var service = Create(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
+
+        Assert.True((await service.FetchAsync("99999")).Cacheable);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task FetchAsync_IsNotCacheable_WhenApiFails(HttpStatusCode status)
+    {
+        var service = Create(_ => new HttpResponseMessage(status));
+
+        Assert.False((await service.FetchAsync("75192")).Cacheable);
+    }
+
+    [Fact]
+    public async Task FetchAsync_IsNotCacheable_WhenApiThrows()
+    {
+        var http = new HttpClient(new ThrowingHandler()) { BaseAddress = new Uri("https://rebrickable.com/") };
+        var service = new RebrickableService(http, NullLogger<RebrickableService>.Instance);
+
+        Assert.False((await service.FetchAsync("12345")).Cacheable);
+    }
+
+    [Fact]
+    public async Task FetchAsync_IsNotCacheable_WhenThemeLookupIsRateLimited()
+    {
+        var service = Create(req => req.RequestUri!.ToString().Contains("/themes/")
+            ? new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+            : Json("{\"name\":\"Falcon\",\"theme_id\":158}"));
+
+        var result = await service.FetchAsync("75192");
+
+        Assert.Equal("Falcon", result.Name);
+        Assert.Null(result.Theme);
+        Assert.False(result.Cacheable);
+    }
+
+    [Fact]
+    public async Task FetchAsync_FetchesEachThemeOnlyOnce()
+    {
+        var themeCalls = 0;
+        var service = Create(req =>
+        {
+            if (req.RequestUri!.ToString().Contains("/themes/"))
+            {
+                themeCalls++;
+                return Json("{\"name\":\"Star Wars\"}");
+            }
+            return Json("{\"name\":\"Some set\",\"theme_id\":158}");
+        });
+
+        var first = await service.FetchAsync("75192");
+        var second = await service.FetchAsync("75257");
+
+        Assert.Equal("Star Wars", first.Theme);
+        Assert.Equal("Star Wars", second.Theme);
+        Assert.Equal(1, themeCalls);
+    }
+
     private sealed class ThrowingHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)

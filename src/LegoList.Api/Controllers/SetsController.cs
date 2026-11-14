@@ -23,6 +23,69 @@ public class SetsController(
         return await db.SetLists.FirstOrDefaultAsync(l => l.Id == listId && l.UserId == user.Id);
     }
 
+    // A cached row with no name usually means an earlier lookup came back empty; look again after this long.
+    private static readonly TimeSpan EmptyMetadataRetryAfter = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// Returns cached metadata, or fetches it from Rebrickable. Only definitive answers are stored:
+    /// a rate limit or outage must not leave a permanently empty row behind.
+    /// </summary>
+    private async Task<SetMetadata?> ResolveMetadataAsync(string setNumber)
+    {
+        var cached = await db.SetMetadatas.FindAsync(setNumber);
+        if (cached is not null && (cached.Name is not null || cached.FetchedAt > DateTime.UtcNow - EmptyMetadataRetryAfter))
+            return cached;
+
+        var fetched = await rebrickableService.FetchAsync(setNumber);
+
+        if (!fetched.Cacheable)
+        {
+            logger.LogWarning("Rebrickable lookup for {SetNumber} failed; not caching so it is retried next time", setNumber);
+            return cached ?? new SetMetadata
+            {
+                SetNumber = setNumber,
+                Name = fetched.Name,
+                Theme = fetched.Theme,
+                ImageUrl = fetched.ImageUrl,
+                PieceCount = fetched.PieceCount,
+                FetchedAt = DateTime.UtcNow
+            };
+        }
+
+        if (cached is not null)
+        {
+            cached.Name = fetched.Name;
+            cached.Theme = fetched.Theme;
+            cached.ImageUrl = fetched.ImageUrl;
+            cached.PieceCount = fetched.PieceCount;
+            cached.FetchedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+            return cached;
+        }
+
+        try
+        {
+            var metadata = new SetMetadata
+            {
+                SetNumber = setNumber,
+                Name = fetched.Name,
+                Theme = fetched.Theme,
+                ImageUrl = fetched.ImageUrl,
+                PieceCount = fetched.PieceCount,
+                FetchedAt = DateTime.UtcNow
+            };
+            db.SetMetadatas.Add(metadata);
+            await db.SaveChangesAsync();
+            return metadata;
+        }
+        catch (DbUpdateException)
+        {
+            // Another concurrent request cached it first; reload
+            db.ChangeTracker.Clear();
+            return await db.SetMetadatas.FindAsync(setNumber);
+        }
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetAll(int listId)
     {
@@ -52,32 +115,7 @@ public class SetsController(
         var list = await GetOwnedListAsync(listId);
         if (list is null) return NotFound();
 
-        // Use cached metadata if available, otherwise fetch from Rebrickable
-        var metadata = await db.SetMetadatas.FindAsync(request.SetNumber);
-        if (metadata is null)
-        {
-            var fetched = await rebrickableService.FetchAsync(request.SetNumber);
-            try
-            {
-                metadata = new SetMetadata
-                {
-                    SetNumber = request.SetNumber,
-                    Name = fetched.Name,
-                    Theme = fetched.Theme,
-                    ImageUrl = fetched.ImageUrl,
-                    PieceCount = fetched.PieceCount,
-                    FetchedAt = DateTime.UtcNow
-                };
-                db.SetMetadatas.Add(metadata);
-                await db.SaveChangesAsync();
-            }
-            catch (DbUpdateException)
-            {
-                // Another concurrent request cached it first; reload
-                db.ChangeTracker.Clear();
-                metadata = await db.SetMetadatas.FindAsync(request.SetNumber);
-            }
-        }
+        var metadata = await ResolveMetadataAsync(request.SetNumber);
 
         var set = new LegoSet
         {

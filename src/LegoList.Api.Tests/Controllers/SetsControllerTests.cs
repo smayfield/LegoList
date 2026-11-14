@@ -182,6 +182,68 @@ public class SetsControllerTests
     }
 
     [Fact]
+    public async Task Create_DoesNotCacheMetadata_WhenRebrickableIsRateLimited()
+    {
+        var rebrickable = CreateRebrickable(_ => new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+        var (controller, db, _, list) = Scaffold(rebrickable: rebrickable);
+
+        var result = await controller.Create(list.Id, new CreateSetRequest("75192", 1));
+
+        Assert.IsType<CreatedAtActionResult>(result);
+        Assert.Equal(1, db.LegoSets.Count());   // the set is still added
+        Assert.Empty(db.SetMetadatas);          // but the failure isn't remembered
+    }
+
+    [Fact]
+    public async Task Create_RetriesLookup_AfterEarlierFailureWasNotCached()
+    {
+        var fail = true;
+        var rebrickable = CreateRebrickable(_ => fail
+            ? new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+            : Json("{\"name\":\"Falcon\",\"theme_id\":null,\"set_img_url\":null,\"num_parts\":7541}"));
+        var (controller, db, _, list) = Scaffold(rebrickable: rebrickable);
+
+        await controller.Create(list.Id, new CreateSetRequest("75192", 1));
+        fail = false;
+        await controller.Create(list.Id, new CreateSetRequest("75192", 1));
+
+        var cached = Assert.Single(db.SetMetadatas);
+        Assert.Equal("Falcon", cached.Name);
+        Assert.Equal(7541, cached.PieceCount);
+    }
+
+    [Fact]
+    public async Task Create_RefetchesStaleEmptyMetadata_AndFillsItIn()
+    {
+        var rebrickable = CreateRebrickable(_ => Json(
+            "{\"name\":\"Falcon\",\"theme_id\":null,\"set_img_url\":\"https://img.com/f.jpg\",\"num_parts\":7541}"));
+        var (controller, db, _, list) = Scaffold(rebrickable: rebrickable);
+        db.SetMetadatas.Add(new SetMetadata { SetNumber = "75192", FetchedAt = DateTime.UtcNow.AddHours(-2) });
+        await db.SaveChangesAsync();
+
+        await controller.Create(list.Id, new CreateSetRequest("75192", 1));
+
+        var cached = Assert.Single(db.SetMetadatas);
+        Assert.Equal("Falcon", cached.Name);
+        Assert.Equal("https://img.com/f.jpg", cached.ImageUrl);
+        Assert.Equal("Falcon", db.LegoSets.Single().Name);
+    }
+
+    [Fact]
+    public async Task Create_DoesNotRefetch_RecentEmptyMetadata()
+    {
+        var calls = 0;
+        var rebrickable = CreateRebrickable(_ => { calls++; return Json("{\"name\":\"Falcon\"}"); });
+        var (controller, db, _, list) = Scaffold(rebrickable: rebrickable);
+        db.SetMetadatas.Add(new SetMetadata { SetNumber = "99999", FetchedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        await controller.Create(list.Id, new CreateSetRequest("99999", 1));
+
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
     public async Task Create_ReturnsCreated_WithCorrectSetNumber()
     {
         var (controller, db, _, list) = Scaffold();
