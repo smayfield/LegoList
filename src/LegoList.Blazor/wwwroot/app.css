@@ -800,6 +800,10 @@ a {
     content: "An error has occurred."
 }
 
+.set-card__move {
+    flex: 1 1 100%;
+}
+
 /* ---------- Add several sets at once ---------- */
 
 .bulk-add {
