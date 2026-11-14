@@ -695,3 +695,28 @@ a {
 .blazor-error-boundary::after {
     content: "An error has occurred."
 }
+
+/* ---------- Add several sets at once ---------- */
+
+.bulk-add {
+    margin: 0 0 1.5rem;
+}
+
+.bulk-add summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--blue);
+}
+
+.bulk-add .lb-field {
+    margin-top: 0.75rem;
+    max-width: 32rem;
+}
+
+.bulk-add__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+}

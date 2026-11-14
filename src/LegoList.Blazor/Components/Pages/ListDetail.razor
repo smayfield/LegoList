@@ -4,6 +4,7 @@
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using LegoList.Blazor.Models
+@using LegoList.Blazor.Services
 
 <PageTitle>@(list?.Name ?? "List")</PageTitle>
 
@@ -43,6 +44,27 @@ else
         </button>
     </div>
     <p class="add-hint">The name, theme, picture, and piece count come from Rebrickable.</p>
+
+    <details class="bulk-add" open="@(isBulkAdding || bulkText.Length > 0)">
+        <summary>Add several sets at once</summary>
+        <label class="lb-field">
+            One set per line: a set number, then an optional quantity (e.g. <code>75192</code> or <code>10294 x2</code>).
+            <textarea class="lb-input" rows="6" placeholder="75192&#10;10294 x2&#10;42083"
+                      @bind="bulkText" @bind:event="oninput" disabled="@isBulkAdding"></textarea>
+        </label>
+        <div class="bulk-add__actions">
+            <button class="lb-btn lb-btn--red" @onclick="AddMany" disabled="@(isBulkAdding || string.IsNullOrWhiteSpace(bulkText))">
+                @if (isBulkAdding) { <span class="spinner" role="status"></span> <span>@bulkProgress</span> }
+                else { <span>Add these sets</span> }
+            </button>
+            <span class="add-hint">Sets are looked up one at a time to stay under Rebrickable's rate limit, so a long list takes a little while.</span>
+        </div>
+    </details>
+
+    @if (infoMessage is not null)
+    {
+        <div class="notice mb-4" role="status">@infoMessage</div>
+    }
 
     @if (errorMessage is not null)
     {
@@ -116,6 +138,13 @@ else
                                 <span class="set-card__pieces">@pieces.ToString("N0") pieces</span>
                             }
                             <div class="set-card__actions">
+                                @if (set.ImageUrl is null)
+                                {
+                                    <button class="lb-btn lb-btn--small" aria-label="Look up details for @set.SetNumber" title="Fetch the name, theme, picture and piece count from Rebrickable"
+                                            disabled="@(refreshingSetId == set.Id)" @onclick="() => RefreshSet(set.Id)">
+                                        @(refreshingSetId == set.Id ? "Looking up…" : "Look up details")
+                                    </button>
+                                }
                                 <button class="lb-btn lb-btn--small lb-btn--blue" aria-label="Edit @set.Name" @onclick="() => StartEdit(set)">Edit</button>
                                 <button class="lb-btn lb-btn--small lb-btn--danger" aria-label="Delete @set.Name" @onclick="() => DeleteSet(set.Id)">Delete</button>
                             </div>
@@ -137,6 +166,15 @@ else
     private string newSetNumber = string.Empty;
     private int newQuantity = 1;
     private bool isAdding = false;
+    private string? infoMessage;
+
+    // Bulk add state
+    private string bulkText = string.Empty;
+    private bool isBulkAdding;
+    private string? bulkProgress;
+
+    // Refresh state
+    private int? refreshingSetId;
 
     // Edit state
     private int? editingSetId;
@@ -185,9 +223,13 @@ else
             });
             if (response.IsSuccessStatusCode)
             {
+                var created = await response.Content.ReadFromJsonAsync<LegoSetDto>();
                 newSetNumber = string.Empty;
                 newQuantity = 1;
                 errorMessage = null;
+                infoMessage = created?.LookupFailed == true
+                    ? "Set added, but Rebrickable couldn't be reached for its details (it may be rate limiting). Use “Look up details” on the set in a minute."
+                    : null;
                 await LoadList();
             }
             else
@@ -202,6 +244,107 @@ else
         finally
         {
             isAdding = false;
+        }
+    }
+
+    private async Task AddMany()
+    {
+        var parsed = BulkSetParser.Parse(bulkText);
+        if (parsed.Entries.Count == 0 && parsed.Invalid.Count == 0) return;
+
+        isBulkAdding = true;
+        errorMessage = null;
+        infoMessage = null;
+        var added = 0;
+        var withoutDetails = 0;
+        var failed = new List<BulkSetEntry>();
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            for (var i = 0; i < parsed.Entries.Count; i++)
+            {
+                var entry = parsed.Entries[i];
+                bulkProgress = $"Adding {i + 1} of {parsed.Entries.Count} ({entry.SetNumber})…";
+                StateHasChanged();
+                try
+                {
+                    var response = await http.PostAsJsonAsync($"api/lists/{Id}/sets", new
+                    {
+                        SetNumber = entry.SetNumber,
+                        Quantity = entry.Quantity
+                    });
+                    if (response.IsSuccessStatusCode)
+                    {
+                        added++;
+                        var created = await response.Content.ReadFromJsonAsync<LegoSetDto>();
+                        if (created?.LookupFailed == true) withoutDetails++;
+                    }
+                    else
+                    {
+                        failed.Add(entry);
+                    }
+                }
+                catch (Exception)
+                {
+                    failed.Add(entry);
+                }
+            }
+        }
+        finally
+        {
+            isBulkAdding = false;
+            bulkProgress = null;
+        }
+
+        // Leave only what still needs attention in the box, so it can be fixed and retried.
+        bulkText = string.Join("\n",
+            failed.Select(f => f.Quantity == 1 ? f.SetNumber : $"{f.SetNumber} x{f.Quantity}")
+                .Concat(parsed.Invalid));
+
+        var parts = new List<string> { added == 1 ? "Added 1 set." : $"Added {added} sets." };
+        if (withoutDetails > 0)
+            parts.Add($"{withoutDetails} couldn't get details from Rebrickable yet; use “Look up details” on them in a minute.");
+        if (failed.Count > 0)
+            parts.Add($"{failed.Count} failed to add and {(failed.Count == 1 ? "is" : "are")} still in the box.");
+        if (parsed.Invalid.Count > 0)
+            parts.Add($"Couldn't understand: {string.Join(", ", parsed.Invalid)}.");
+        infoMessage = string.Join(" ", parts);
+
+        await LoadList();
+    }
+
+    private async Task RefreshSet(int setId)
+    {
+        refreshingSetId = setId;
+        errorMessage = null;
+        infoMessage = null;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            var response = await http.PostAsync($"api/lists/{Id}/sets/{setId}/refresh", content: null);
+            if (response.IsSuccessStatusCode)
+            {
+                var refreshed = await response.Content.ReadFromJsonAsync<LegoSetDto>();
+                if (refreshed?.Found == false)
+                    infoMessage = $"Rebrickable has no record of set {refreshed.SetNumber}. You can still edit its name and theme yourself.";
+                await LoadList();
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
+            {
+                errorMessage = "Rebrickable couldn't be reached right now (it may be rate limiting). Try again in a minute.";
+            }
+            else
+            {
+                errorMessage = $"Failed to look up details: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            refreshingSetId = null;
         }
     }
 
