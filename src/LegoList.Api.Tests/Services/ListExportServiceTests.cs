@@ -18,6 +18,20 @@ public class ListExportServiceTests
         return new UTF8Encoding(false).GetString(bytes, 3, bytes.Length - 3); // skip the BOM
     }
 
+    [Fact]
+    public void InExportOrder_SortsByTheme_ThenNumerically_ByNumber()
+    {
+        var ordered = ListExportService.InExportOrder([
+            new ExportSet("10001", "B", "Technic", 1, null),
+            new ExportSet("9999", "A", "Technic", 1, null),
+            new ExportSet("75192", "C", "Star Wars", 1, null),
+            new ExportSet("40000", "D", "", 1, null),
+            new ExportSet("10294-2", "F", "Technic", 1, null),
+            new ExportSet("10294-1", "E", "Technic", 1, null)]);
+
+        Assert.Equal(["75192", "9999", "10001", "10294-1", "10294-2", "40000"], ordered.Select(s => s.SetNumber));
+    }
+
     // ── CSV ──────────────────────────────────────────────────────────────────
 
     [Fact]
