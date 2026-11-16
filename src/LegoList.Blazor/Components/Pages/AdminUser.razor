@@ -1,0 +1,177 @@
+@page "/admin/users/{Id:int}"
+@rendermode InteractiveServer
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "Admin")]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using LegoList.Blazor.Models
+
+<PageTitle>Admin · @(user?.Email ?? "User")</PageTitle>
+
+<a class="back-link" href="/admin/users">&larr; All users</a>
+
+@if (user is null && errorMessage is null)
+{
+    <p class="page-head__summary">Loading…</p>
+}
+else if (user is null)
+{
+    <div class="notice" role="alert">@errorMessage</div>
+}
+else
+{
+    <div class="page-head">
+        <h1>@user.Email</h1>
+        <p class="page-head__summary">
+            Joined @user.CreatedAt.ToString("yyyy-MM-dd") ·
+            @user.Lists.Count list@(user.Lists.Count == 1 ? "" : "s") ·
+            @user.Lists.Sum(l => l.Sets.Sum(s => s.Quantity)) sets owned
+        </p>
+        <div class="admin-actions">
+            @if (confirming == ("user", user.Id))
+            {
+                <span>Delete this account and all of their lists and sets?</span>
+                <button class="lb-btn lb-btn--small lb-btn--danger" @onclick="DeleteUser">Yes, delete account</button>
+                <button class="lb-btn lb-btn--small" @onclick="Cancel">Cancel</button>
+            }
+            else
+            {
+                <button class="lb-btn lb-btn--small lb-btn--danger" @onclick='() => Confirm("user", user.Id)'>Delete account</button>
+            }
+        </div>
+    </div>
+
+    @if (errorMessage is not null)
+    {
+        <div class="notice" role="alert">@errorMessage</div>
+    }
+
+    @if (user.Lists.Count == 0)
+    {
+        <p class="muted">This account has no lists.</p>
+    }
+
+    @foreach (var list in user.Lists)
+    {
+        <section class="admin-list">
+            <h2>@list.Name <span class="muted">(@list.Sets.Count)</span></h2>
+            <div class="admin-actions">
+                @if (confirming == ("list", list.Id))
+                {
+                    <span>Delete this list and its sets?</span>
+                    <button class="lb-btn lb-btn--small lb-btn--danger" @onclick="() => DeleteList(list.Id)">Yes, delete list</button>
+                    <button class="lb-btn lb-btn--small" @onclick="Cancel">Cancel</button>
+                }
+                else
+                {
+                    <button class="lb-btn lb-btn--small" @onclick='() => Confirm("list", list.Id)'>Delete list</button>
+                }
+            </div>
+            @if (list.Sets.Count > 0)
+            {
+                <table class="admin-table">
+                    <thead>
+                        <tr><th>Set</th><th>Theme</th><th class="num">Qty</th><th>Built</th><th>Location</th><th class="num">Price</th><th>Notes</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var s in list.Sets)
+                        {
+                            <tr>
+                                <td>@s.SetNumber @s.Name</td>
+                                <td>@s.Theme</td>
+                                <td class="num">@s.Quantity</td>
+                                <td>@(s.Built ? "Yes" : "")</td>
+                                <td>@s.DisplayLocation</td>
+                                <td class="num">@(s.PurchasePrice?.ToString("C"))</td>
+                                <td>@s.Notes</td>
+                                <td>
+                                    @if (confirming == ("set", s.Id))
+                                    {
+                                        <button class="lb-btn lb-btn--small lb-btn--danger" @onclick="() => DeleteSet(s.Id)">Confirm</button>
+                                        <button class="lb-btn lb-btn--small" @onclick="Cancel">Cancel</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="lb-btn lb-btn--small" aria-label="Delete @s.Name" @onclick='() => Confirm("set", s.Id)'>Delete</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    }
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private AdminUserDto? user;
+    private string? errorMessage;
+    private (string Kind, int Id)? confirming;
+
+    protected override async Task OnParametersSetAsync() => await Load();
+
+    private void Confirm(string kind, int id) => confirming = (kind, id);
+
+    private void Cancel() => confirming = null;
+
+    private async Task Load()
+    {
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            var response = await http.GetAsync($"api/admin/users/{Id}");
+            if (!response.IsSuccessStatusCode)
+            {
+                user = null;
+                errorMessage = response.StatusCode == System.Net.HttpStatusCode.NotFound
+                    ? "That user doesn't exist."
+                    : $"Couldn't load the user: {response.StatusCode}";
+                return;
+            }
+            user = await response.Content.ReadFromJsonAsync<AdminUserDto>();
+            errorMessage = null;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+    }
+
+    private async Task DeleteUser()
+    {
+        if (await Delete($"api/admin/users/{Id}")) Nav.NavigateTo("/admin/users");
+    }
+
+    private async Task DeleteList(int listId)
+    {
+        if (await Delete($"api/admin/lists/{listId}")) await Load();
+    }
+
+    private async Task DeleteSet(int setId)
+    {
+        if (await Delete($"api/admin/sets/{setId}")) await Load();
+    }
+
+    private async Task<bool> Delete(string url)
+    {
+        confirming = null;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            var response = await http.DeleteAsync(url);
+            if (response.IsSuccessStatusCode) return true;
+
+            var body = response.StatusCode == System.Net.HttpStatusCode.BadRequest
+                ? await response.Content.ReadFromJsonAsync<ApiError>()
+                : null;
+            errorMessage = body?.Error ?? $"Couldn't delete: {response.StatusCode}";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        return false;
+    }
+}

@@ -9,6 +9,9 @@
         <nav class="site-nav" aria-label="Account">
             <AuthorizeView>
                 <Authorized>
+                    <AuthorizeView Policy="Admin" Context="admin">
+                        <a class="site-nav__link" href="/admin">Admin</a>
+                    </AuthorizeView>
                     <span class="site-nav__user">
                         @context.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
                     </span>

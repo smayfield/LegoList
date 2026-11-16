@@ -69,8 +69,13 @@ builder.Services
         };
     });
 
-builder.Services.AddAuthorization();
-builder.Services.AddHttpContextAccessor();
+// The admin pages are hidden from everyone else here; the API independently enforces the same
+// rule (and also requires Google's email_verified), so this is only about the UI.
+var adminEmails = builder.Configuration.GetSection("Admin:Emails").Get<string[]>() ?? [];
+builder.Services.AddAuthorization(o =>
+    o.AddPolicy("Admin", policy => policy.RequireAssertion(ctx =>
+        ctx.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value is { } email
+        && adminEmails.Any(a => string.Equals(a?.Trim(), email.Trim(), StringComparison.OrdinalIgnoreCase)))));builder.Services.AddHttpContextAccessor();
 builder.Services.AddCircuitServicesAccessor();
 builder.Services.AddTransient<ApiAuthHandler>();
 

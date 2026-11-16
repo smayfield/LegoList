@@ -1,0 +1,82 @@
+@page "/admin/users"
+@rendermode InteractiveServer
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "Admin")]
+@inject IHttpClientFactory HttpClientFactory
+@using LegoList.Blazor.Models
+
+<PageTitle>Admin · Users</PageTitle>
+
+<a class="back-link" href="/admin">&larr; Dashboard</a>
+<div class="page-head">
+    <h1>Users</h1>
+    @if (users is not null)
+    {
+        <p class="page-head__summary">@users.Count account@(users.Count == 1 ? "" : "s")</p>
+    }
+</div>
+
+@if (errorMessage is not null)
+{
+    <div class="notice" role="alert">@errorMessage</div>
+}
+else if (users is null)
+{
+    <p class="page-head__summary">Loading users…</p>
+}
+else
+{
+    <div class="search-bar">
+        <label class="lb-field">
+            Filter by email
+            <input class="lb-input" type="search" @bind="filter" @bind:event="oninput" />
+        </label>
+    </div>
+
+    <table class="admin-table">
+        <thead>
+            <tr><th>Email</th><th>Joined</th><th class="num">Lists</th><th class="num">Set entries</th><th class="num">Sets owned</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var u in Filtered)
+            {
+                <tr>
+                    <td><a href="/admin/users/@u.Id">@u.Email</a></td>
+                    <td>@u.CreatedAt.ToString("yyyy-MM-dd")</td>
+                    <td class="num">@u.ListCount</td>
+                    <td class="num">@u.SetEntries</td>
+                    <td class="num">@u.TotalSets</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<AdminUserRowDto>? users;
+    private string? errorMessage;
+    private string filter = string.Empty;
+
+    private IEnumerable<AdminUserRowDto> Filtered =>
+        string.IsNullOrWhiteSpace(filter)
+            ? users!
+            : users!.Where(u => u.Email.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            var response = await http.GetAsync("api/admin/users");
+            if (!response.IsSuccessStatusCode)
+            {
+                errorMessage = $"Couldn't load users: {response.StatusCode}";
+                return;
+            }
+            users = await response.Content.ReadFromJsonAsync<List<AdminUserRowDto>>() ?? [];
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+    }
+}
