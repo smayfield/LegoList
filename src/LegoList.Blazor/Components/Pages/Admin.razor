@@ -1,0 +1,101 @@
+@page "/admin"
+@rendermode InteractiveServer
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "Admin")]
+@inject IHttpClientFactory HttpClientFactory
+@using LegoList.Blazor.Models
+
+<PageTitle>Admin</PageTitle>
+
+<div class="page-head">
+    <h1>Admin dashboard</h1>
+    <p class="page-head__summary">How LegoList is being used. <a href="/admin/users">Manage users &rarr;</a></p>
+</div>
+
+@if (errorMessage is not null)
+{
+    <div class="notice" role="alert">@errorMessage</div>
+}
+else if (stats is null)
+{
+    <p class="page-head__summary">Loading stats…</p>
+}
+else
+{
+    <div class="stat-grid">
+        <div class="stat"><span class="stat__value">@stats.Users</span><span class="stat__label">Accounts</span></div>
+        <div class="stat"><span class="stat__value">@stats.UsersLast7Days</span><span class="stat__label">New in 7 days</span></div>
+        <div class="stat"><span class="stat__value">@stats.UsersLast30Days</span><span class="stat__label">New in 30 days</span></div>
+        <div class="stat"><span class="stat__value">@stats.UsersWithSets</span><span class="stat__label">Accounts with sets</span></div>
+        <div class="stat"><span class="stat__value">@stats.Lists</span><span class="stat__label">Lists</span></div>
+        <div class="stat"><span class="stat__value">@stats.TotalSets</span><span class="stat__label">Sets owned (with copies)</span></div>
+        <div class="stat"><span class="stat__value">@stats.DistinctSets</span><span class="stat__label">Distinct set numbers</span></div>
+        <div class="stat"><span class="stat__value">@stats.BuiltSets</span><span class="stat__label">Built</span></div>
+        <div class="stat"><span class="stat__value">@stats.AverageSetsPerUser</span><span class="stat__label">Sets per account</span></div>
+        <div class="stat"><span class="stat__value">@stats.CachedMetadata</span><span class="stat__label">Sets cached from Rebrickable</span></div>
+    </div>
+
+    <div class="admin-columns">
+        <section>
+            <h2>Top themes</h2>
+            @if (stats.TopThemes.Count == 0)
+            {
+                <p class="muted">Nothing yet.</p>
+            }
+            else
+            {
+                <table class="admin-table">
+                    <thead><tr><th>Theme</th><th class="num">Sets</th></tr></thead>
+                    <tbody>
+                        @foreach (var t in stats.TopThemes)
+                        {
+                            <tr><td>@t.Name</td><td class="num">@t.Count</td></tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+        <section>
+            <h2>Most collected sets</h2>
+            @if (stats.TopSets.Count == 0)
+            {
+                <p class="muted">Nothing yet.</p>
+            }
+            else
+            {
+                <table class="admin-table">
+                    <thead><tr><th>Set</th><th class="num">Owners</th><th class="num">Copies</th></tr></thead>
+                    <tbody>
+                        @foreach (var s in stats.TopSets)
+                        {
+                            <tr><td>@s.SetNumber @s.Name</td><td class="num">@s.Owners</td><td class="num">@s.Copies</td></tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    private AdminStatsDto? stats;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            var response = await http.GetAsync("api/admin/stats");
+            if (!response.IsSuccessStatusCode)
+            {
+                errorMessage = $"Couldn't load stats: {response.StatusCode}";
+                return;
+            }
+            stats = await response.Content.ReadFromJsonAsync<AdminStatsDto>();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+    }
+}

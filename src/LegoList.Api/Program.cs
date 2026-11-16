@@ -33,7 +33,10 @@ namespace LegoList
                     options.Audience = googleClientId;
                     options.TokenValidationParameters.ValidIssuer = "https://accounts.google.com";
                 });
-            builder.Services.AddAuthorization();
+            var adminEmails = builder.Configuration.GetSection("Admin:Emails").Get<string[]>() ?? [];
+            builder.Services.AddAuthorization(options =>
+                options.AddPolicy(AdminAccess.PolicyName, policy =>
+                    policy.RequireAssertion(ctx => AdminAccess.IsAdmin(ctx.User, adminEmails))));
             builder.Services.AddScoped<UserService>();
 
             // Rebrickable allows about one request per second: space calls out and retry 429s.
