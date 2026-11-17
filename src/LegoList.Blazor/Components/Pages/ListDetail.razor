@@ -39,7 +39,7 @@ else
             Quantity
             <input class="lb-input lb-input--qty" type="number" min="1" @bind="newQuantity" disabled="@isAdding" />
         </label>
-        <button class="lb-btn lb-btn--green" @onclick="AddSet" disabled="@isAdding">
+        <button class="lb-btn lb-btn--green" @onclick="PreviewSet" disabled="@isAdding">
             @if (isAdding) { <span class="spinner" role="status"></span> <span>Looking up set…</span> }
             else { <span>Add set</span> }
         </button>
@@ -257,6 +257,42 @@ else
     }
 
     <ImageLightbox Url="@lightboxUrl" Alt="@lightboxAlt" OnClose="CloseImage" />
+
+    @if (preview is not null)
+    {
+        <div class="confirm-backdrop" @onclick="CancelPreview">
+            <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title"
+                 @onclick:stopPropagation="true" @onkeydown="OnPreviewKeyDown" tabindex="-1">
+                <h2 id="confirm-title">Is this the set?</h2>
+                @if (preview.Found)
+                {
+                    @if (!string.IsNullOrEmpty(preview.ImageUrl))
+                    {
+                        <img class="confirm-dialog__image" src="@preview.ImageUrl" alt="@preview.Name" />
+                    }
+                    <p class="confirm-dialog__name"><strong>@preview.SetNumber</strong> &mdash; @preview.Name</p>
+                    <p class="add-hint">
+                        @preview.Theme@(preview.PieceCount is > 0 ? $" · {preview.PieceCount:N0} pieces" : "")
+                    </p>
+                }
+                else if (preview.LookupFailed)
+                {
+                    <p>Rebrickable couldn't be reached (it may be rate limiting), so set <strong>@preview.SetNumber</strong> can't be checked right now.
+                       You can add it anyway and use “Look up details” later.</p>
+                }
+                else
+                {
+                    <p>Rebrickable has no set numbered <strong>@preview.SetNumber</strong>. Check for a typo, or add it anyway and fill in its name yourself.</p>
+                }
+                <div class="confirm-dialog__actions">
+                    <button class="lb-btn lb-btn--green" @onclick="ConfirmAdd" disabled="@isAdding">
+                        @(preview.Found ? "Yes, add it" : "Add anyway")
+                    </button>
+                    <button class="lb-btn" @onclick="CancelPreview" disabled="@isAdding">No, correct it</button>
+                </div>
+            </div>
+        </div>
+    }
 }
 
 @code {
@@ -346,6 +382,52 @@ else
         {
             errorMessage = $"Failed to load list: {ex.Message}";
         }
+    }
+
+    private LegoSetDto? preview;
+
+    /// <summary>Looks the typed number up on Rebrickable and asks the user to confirm before adding.</summary>
+    private async Task PreviewSet()
+    {
+        if (string.IsNullOrWhiteSpace(newSetNumber)) return;
+        isAdding = true;
+        errorMessage = null;
+        infoMessage = null;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("LegoListApi");
+            var number = newSetNumber.Trim();
+            var result = await http.GetFromJsonAsync<LegoSetDto>(
+                $"api/lists/{Id}/sets/preview?setNumber={Uri.EscapeDataString(number)}");
+            if (result is not null)
+            {
+                result.SetNumber = number;
+                preview = result;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isAdding = false;
+        }
+    }
+
+    private void CancelPreview() => preview = null;
+
+    private void OnPreviewKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") preview = null;
+    }
+
+    private async Task ConfirmAdd()
+    {
+        if (preview is null) return;
+        newSetNumber = preview.SetNumber;
+        preview = null;
+        await AddSet();
     }
 
     private async Task AddSet()
