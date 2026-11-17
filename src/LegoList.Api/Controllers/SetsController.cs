@@ -116,6 +116,30 @@ public class SetsController(
         return Ok(sets);
     }
 
+    /// <summary>
+    /// Looks a set number up on Rebrickable without adding anything, so the user can confirm it's the
+    /// set they meant. The result is cached, so adding the set right after doesn't call Rebrickable again.
+    /// </summary>
+    [HttpGet("preview")]
+    public async Task<IActionResult> Preview(int listId, [FromQuery] string setNumber)
+    {
+        var list = await GetOwnedListAsync(listId);
+        if (list is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(setNumber)) return BadRequest(new { Error = "A set number is required." });
+
+        var (metadata, lookupFailed) = await ResolveMetadataAsync(setNumber);
+        return Ok(new
+        {
+            SetNumber = setNumber,
+            metadata?.Name,
+            metadata?.Theme,
+            metadata?.ImageUrl,
+            metadata?.PieceCount,
+            Found = metadata?.Name is not null,
+            LookupFailed = lookupFailed
+        });
+    }
+
     [HttpGet("{id}")]
     public async Task<IActionResult> Get(int listId, int id)
     {
